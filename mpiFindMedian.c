@@ -725,19 +725,6 @@ void transferPointsST(float* distances,float median,floatType **pointsCoords,int
     }
 }
 
-const char* getfield(char* line, int num)
-{
-    const char* tok;
-    for (tok = strtok(line, ",");
-            tok && *tok;
-            tok = strtok(NULL, ",\n"))
-    {
-        if (!--num)
-            return tok;
-    }
-    return NULL;
-}
-
 //Code used as in(using j < col in addition): https://gist.github.com/amirmasoudabdol/f1efda29760b97f16e0e
 void read_csv(int row, int col, char *filename, floatType **data, int rowOffset, int colOffset){
         FILE *file;

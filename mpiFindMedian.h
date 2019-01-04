@@ -1,4 +1,3 @@
-
 //#define DEBUG
 //#define DEBUG_TRANSFER
 //#define DEBUG_MAIN
@@ -45,17 +44,16 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
 //Reoder an array according to a pivot value
 void transferPointsST(float* distances,float median,floatType **pointsCoords,int size,int coordSize);
 
-
-const char* getfield(char* line, int num);
-
-
+//Read floating point numbers from a csv file into a matrix <data>
 void read_csv(int row, int col, char *filename, floatType **data, int rowOffset, int colOffset);
 
+/****Partitions the Array into larger and smaller than the pivot values****/
 void partition (float *array,int elements, float pivot, float **arraysmall, float **arraybig, int *endsmall, int *endbig);
 
+/***Serial Selection***/
 float selection(float *array,int number);
 
-#endif /* _QSORT-SEQUENTIAL_H_ */
+#endif
 
 
 

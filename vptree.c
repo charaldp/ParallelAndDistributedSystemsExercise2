@@ -1,10 +1,11 @@
-/*
-
-Author : Charalampos Papadiakos
-
-Date : 7/12/2018
-
-*/
+/**********************************************************************
+ *
+ * vptree.c
+ * Vantage point tree implementation
+ * Charalampos Papadiakos <charaldp@auth.gr>
+ * Time-stamp: <2019-01-4>
+ *
+ **********************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
