@@ -134,7 +134,7 @@ int main(int argc, char **argv)
         #endif
         validationPartition(median,partLength,distances,child_Id[l],child_num[l]);
         MPI_Barrier(MPI_COMM_WORLD);
-        printf("l = %d,team = %d, Pid %d CounterMax = %d\n",l,team,processId,count);
+        printf("l = %d,team = %d, Pid %d count = %d\n",l,team,processId,count);
     }
     // Go serial
     medians = (float*)malloc(sizeof(float));
@@ -142,6 +142,9 @@ int main(int argc, char **argv)
     int multiplicity;
     for(l = l_parallel_max;l<log(size)/log(2);l++){
         multiplicity = 1<<(l - l_parallel_max);
+        #ifdef DEBUG_MAIN
+        printf("multiplicity = %d\n",multiplicity);
+        #endif
         medians = (float*)realloc(medians,multiplicity * sizeof(float));
         vantagePoints = (int*)realloc(vantagePoints,multiplicity * sizeof(int));
         for(i = 0;i < multiplicity;i++){
@@ -153,7 +156,7 @@ int main(int argc, char **argv)
         gettimeofday(&first, &tzp);
         calculateDistancesST(distances,pointsCoords,vantagePoints,partLength,multiplicity,coordSize);
         medians = multiSelection(distances, partLength, multiplicity);
-        transferPointsST(distances,medians,pointsCoords,partLength,coordSize);
+        transferPointsST(distances,medians,pointsCoords,partLength,multiplicity);
         gettimeofday(&second, &tzp);
         for(i = 0;i < multiplicity;i++)
             printf("l = %d,Pid = %d, medians[%d] = %f\n",l,processId,i,medians[i]);
@@ -164,10 +167,10 @@ int main(int argc, char **argv)
         }
         lapsed.tv_usec = second.tv_usec - first.tv_usec;
         lapsed.tv_sec = second.tv_sec - first.tv_sec;
+        calculateDistancesST(distances,pointsCoords,vantagePoints,partLength,multiplicity,coordSize);
         validationST(medians,partLength,distances,processId,multiplicity);
         validationPartitionST(medians,partLength,distances,multiplicity);
         printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
-        printf("l = %d, Median at Serial from Team %d: %f\n",l,team,medians);
         printf("Pid %d CounterMax = %d\n",processId,count);
         //MPI_Finalize();
         //exit(0);

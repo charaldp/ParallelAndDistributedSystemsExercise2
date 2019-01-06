@@ -183,61 +183,6 @@ void validationST(float *medians,int size,float *numberPart,int processId,int mu
 	
 }
 
-/***Checks if tranfer point transactions have been made succesfully for both serial and parallel execution***/
-void validationPartition(float median,int size,float *numberPart,int processId,int noProcesses)
-{
-    int i;
-    int countMinEq = 0;
-    int countMax = 0;
-    for(i = 0;i < size;i++){
-        if(numberPart[i] > median)
-            countMax++;
-        else if( numberPart[i] <= median)
-            countMinEq++;
-    }
-    #ifdef DEBUG
-        if((processId < noProcesses/2 && countMax == 0 && countMinEq == size)    //Check that all point in the process that has id lower than noProcesses' half are equal or less than the median
-         ||(processId >= noProcesses/2 && countMax == size && countMinEq == 0))  //Check that all point in the process that has id higher or equal than noProcesses' half are greater than the median
-            printf("VALIDATION PASSED!\n");
-        else
-            printf("VALIDATION FAILED!,id = %d, countMinEq = %d, countMax = %d\n",processId,countMinEq,countMax);
-        printf("Values greater than median %d: %d\n",processId,countMax);
-        printf("Values equal or less than the median %d: %d\n",processId,countMinEq);
-    #endif
-    assert((processId < noProcesses/2 && countMax == 0 && countMinEq == size)   //Check that all point in the process that has id lower than noProcesses' half are equal or less than the median
-         ||(processId >= noProcesses/2 && countMax == size && countMinEq == 0));//Check that all point in the process that has id higher or equal than noProcesses' half are greater than the median
-    
-}
-
-
-void validationPartitionST(float *medians,int size,float *numberPart,int multiplicity)
-{
-    int countMinEq;
-    int countMax;
-    int i,j;
-    int partLength = size / multiplicity;
-
-    for(i = 0;i < multiplicity;i++){
-        countMinEq = 0;
-        countMax = 0;
-        for(j = i * partLength;j < (i + 1) * partLength;j++){
-            if((j < i * partLength + partLength / 2) && numberPart[j] <= medians[j/partLength])
-                countMinEq++;
-            else if((j >= i * partLength + partLength / 2) && numberPart[i] > medians[j/partLength])
-                countMax++;
-        }
-        #ifdef DEBUG
-            if( countMax == partLength/2 && countMinEq == partLength/2 )        //If validation is Serial
-                printf("VALIDATIONpartSt PASSED!\n,%d,%d",j/partLength,multiplicity);
-            else
-                printf("VALIDATIONpartSt FAILED!, countMinEq = %d, countMax = %d,%d,%d\n",countMinEq,countMax,j/partLength,multiplicity);
-            printf("Values greater than median : %d\n",countMax);
-            printf("Values equal or less than the median : %d\n",countMinEq);
-        #endif
-        assert( countMax == partLength/2 && countMinEq == partLength/2);        //If validation is Serial
-    }
-}
-
 /****Part executed only by the Master Node****/
 float masterPart(int noProcesses,int processId,int size,int partLength,float *numberPart,MPI_Comm Current_Comm) //MASTER NODE CODE
 {
@@ -638,7 +583,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
     for(i = 0;i < partLength;i++){
         if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
             #ifdef DEBUG_TRANSFER
-                printf("%d Sending distances[%d] to...%d\n",child_Id,i,dest);
+                printf("%d,%d Sending distances[%d] to...%d,%d\n",child_Id,myCounter,i,dest,partnersCounter);
             #endif
             //pointBuffer = pointsCoords[i];
             MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dest, 1, dest, 1,Current_Comm, &Stat);
@@ -709,16 +654,17 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
         
         if(dests[0] != -1){
             for(offset = 0; //i's value has been left unchanged and the point transfer continues right from the point it has stopped
-                i < partLength && offset < destSize && dests[offset]!=-1;
+                i < partLength && myCounter > 0;
                 i++){
                 if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
                     #ifdef DEBUG_TRANSFER
-                        printf("%d Sending distances[%d] to...%d\n",child_Id,i,dests[offset]);
+                        printf("%d,%d Sending distances[%d] to...%d\n",child_Id,myCounter,i,dests[offset]);
                     #endif
                     //pointBuffer = pointsCoords[i];
                     MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dests[offset], 1, dests[offset], 1,Current_Comm, &Stat);
                     //pointsCoords[i] = pointBuffer;
                     offset++;
+                    myCounter--;
                 }
                 
             }
@@ -736,14 +682,23 @@ void transferPointsST(float* distances,float *medians,floatType **pointsCoords,i
     int i,j,k;
     floatType *temp;
     int partLength = size / multiplicity;
+    #ifdef DEBUG_TRANSFERST
+    printf("multiplicity = %d\n",multiplicity);
+    #endif
 
     for(i = 0;i < multiplicity;i++){
         k = (i + 1) * partLength - 1;
-        for(j = i * partLength;j < (i + 1) * partLength;j++){
+        for(j = i * partLength;j < (i + 1) * partLength && j < k;j++){
             if(distances[j] > medians[j/partLength]){
                 //Scan until you find a proper point to transfer
                 while(distances[k] > medians[j/partLength] && j < k)
                     k--;
+                if(j == k)
+                    break;
+
+                #ifdef DEBUG_TRANSFERST
+                    printf("Exchange on array part medians[%d] = %f: distances[%d] = %f, distances[%d] = %f\n",j/partLength,medians[j/partLength],j,distances[j],k,distances[k]);
+                #endif
 
                 temp = pointsCoords[j];
                 pointsCoords[j] = pointsCoords[k];
@@ -752,6 +707,60 @@ void transferPointsST(float* distances,float *medians,floatType **pointsCoords,i
             }
             
         }
+    }
+}
+
+/***Checks if tranfer point transactions have been made succesfully for both serial and parallel execution***/
+void validationPartition(float median,int size,float *numberPart,int processId,int noProcesses)
+{
+    int i;
+    int countMinEq = 0;
+    int countMax = 0;
+    for(i = 0;i < size;i++){
+        if(numberPart[i] > median)
+            countMax++;
+        else
+            countMinEq++;
+    }
+    #ifdef DEBUG
+        if((processId < noProcesses/2 && countMax == 0 && countMinEq == size)    //Check that all point in the process that has id lower than noProcesses' half are equal or less than the median
+         ||(processId >= noProcesses/2 && countMax == size && countMinEq == 0))  //Check that all point in the process that has id higher or equal than noProcesses' half are greater than the median
+            printf("VALIDATION PASSED!\n");
+        else
+            printf("VALIDATION FAILED!,id = %d, countMinEq = %d, countMax = %d\n",processId,countMinEq,countMax);
+        printf("Values greater than median %d: %d\n",processId,countMax);
+        printf("Values equal or less than the median %d: %d\n",processId,countMinEq);
+    #endif
+    assert((processId < noProcesses/2 && countMax == 0 && countMinEq == size)   //Check that all point in the process that has id lower than noProcesses' half are equal or less than the median
+         ||(processId >= noProcesses/2 && countMax == size && countMinEq == 0));//Check that all point in the process that has id higher or equal than noProcesses' half are greater than the median
+    
+}
+
+void validationPartitionST(float *medians,int size,float *numberPart,int multiplicity)
+{
+    int countMinEq;
+    int countMax;
+    int i,j;
+    int partLength = size / multiplicity;
+    printf("partLength = %d\n",partLength);
+    for(i = 0;i < multiplicity;i++){
+        countMinEq = 0;
+        countMax = 0;
+        for(j = i * partLength;j < (i + 1) * partLength;j++){
+            if((j < i * partLength + partLength / 2) && numberPart[j] <= medians[j/partLength])
+                countMinEq++;
+            else if((j >= i * partLength + partLength / 2) && numberPart[j] > medians[j/partLength])
+                countMax++;
+        }
+        #ifdef DEBUG
+            if( countMax == partLength/2 && countMinEq == partLength/2 )        //If validation is Serial
+                printf("VALIDATIONpartSt PASSED!\n,%d,%d",(j-1)/partLength,multiplicity);
+            else
+                printf("VALIDATIONpartSt FAILED!, countMinEq = %d, countMax = %d,%d,%d\n",countMinEq,countMax,(j-1)/partLength,multiplicity);
+            printf("Values greater than median : %d\n",countMax);
+            printf("Values equal or less than the median : %d\n",countMinEq);
+        #endif
+        assert( countMax == partLength/2 && countMinEq == partLength/2);        //If validation is Serial
     }
 }
 

@@ -1,6 +1,7 @@
 #define DEBUG
 //#define DEBUG_DIST
 //#define DEBUG_TRANSFER
+#define DEBUG_TRANSFERST
 #define DEBUG_MAIN
 #define floatType double
 #define MPI_floatType MPI_DOUBLE
@@ -32,12 +33,6 @@ void validation(float median,int partLength,int size,float *numberPart,int proce
 /***Validates the stability of the operation (Single Threaded)****/
 void validationST(float *medians,int size,float *numberPart,int processId,int multiplicity);
 
-/***Validates the stability of tranfer point transactions for parallel iteration***/
-void validationPartition(float median,int size,float *numberPart,int processId,int noProcesses);
-
-/***Validates the stability of tranfer point transactions for serial iteration***/
-void validationPartitionST(float *medians,int size,float *numberPart,int l);
-
 /****Part executed only by the Master Node****/
 float masterPart(int noProcesses,int processId,int size,int partLength,float *numberPart,MPI_Comm Current_Comm); //MASTER NODE CODE
 
@@ -50,6 +45,12 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
 
 //Reoder an array according to a pivot value
 void transferPointsST(float* distances,float* medians,floatType **pointsCoords,int size,int coordSize);
+
+/***Validates the stability of tranfer point transactions for parallel iteration***/
+void validationPartition(float median,int size,float *numberPart,int processId,int noProcesses);
+
+/***Validates the stability of tranfer point transactions for serial iteration***/
+void validationPartitionST(float *medians,int size,float *numberPart,int l);
 
 //Read floating point numbers from a csv file into a matrix <data>
 void read_csv(int row, int col, char *filename, floatType **data, int rowOffset, int colOffset);
