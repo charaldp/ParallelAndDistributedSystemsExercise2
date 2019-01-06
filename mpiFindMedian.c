@@ -99,6 +99,19 @@ void calculateDistances(float *distances,floatType **pointCoords,floatType *vant
     }
 }
 
+void calculateDistancesST(float *distances,floatType **pointCoords,int *vantagePoints,
+                            int pointsLength,int vantagePointsLength,int cordSize){
+    int i,j,currentVantagePoint;
+    for(i=0;i<pointsLength;i++){
+        currentVantagePoint = vantagePoints[ i / (pointsLength / vantagePointsLength) ];
+        distances[i] = 0;
+        for(j=0;j<cordSize;j++){
+            distances[i] = distances[i] + (float)pow((double)pointCoords[i][j] - pointCoords[currentVantagePoint][j],2.0);
+        }
+        distances[i] = sqrt((double)distances[i]);
+    }
+}
+
 /***Validates the stability of the operation****/
 void validation(float median,int partLength,int size,float *numberPart,int processId,MPI_Comm Current_Comm)
 {   
@@ -124,9 +137,9 @@ void validation(float median,int partLength,int size,float *numberPart,int proce
     if(processId==0)
     {
         if((sumMax<=size/2)&&(sumMin<=size/2))  //Checks if both the lower and higher values occupy less than 50% of the total array.
-            printf("VALIDATION PASSED!\n");
+            printf("VALIDATIONpar PASSED!\n");
         else
-            printf("VALIDATION FAILED!\n");
+            printf("VALIDATIONpar FAILED!\n");
         assert((sumMax <= size/2) && (sumMin <= size/2));
         #ifdef DEBUG
         	printf("Values greater than median: %d\n",sumMax);
@@ -137,31 +150,37 @@ void validation(float median,int partLength,int size,float *numberPart,int proce
 }
 
 /***Validates the stability of the operation (Single Threaded)****/
-void validationST(float median,int size,float *numberPart,int processId)
+void validationST(float *medians,int size,float *numberPart,int processId,int multiplicity)
 {
-	int countMin=0;
-    int countMax=0;
-    int countEq=0;
-    int i;
-    for(i=0;i<size;i++)
-    {
-        if(numberPart[i]>median)
-            countMax++;
-        else if(numberPart[i]<median)
-            countMin++;
-        else
-            countEq++;
+	int countMinEq;
+    int countMax;
+    int i,j;
+    int partLength = size / multiplicity;
+    for(i = 0;i < multiplicity;i++){
+        countMinEq = 0;
+        countMax = 0;
+        for(j = i*partLength;j < (i+1)*partLength;j++){
+            if(numberPart[j] > medians[j/partLength])
+                countMax++;
+            else
+                countMinEq++;
+        }
+        #ifdef DEBUG
+            if((countMax = partLength/2) && (countMinEq = partLength/2)){  //Checks if both the lower and higher values occupy less than 50% of the total array.
+                printf("VALIDATIONst PASSED!\n");
+            }else{
+                printf("VALIDATIONst FAILED!\n");
+            }
+            printf("Values greater than median %d: %d\n",processId,countMax);
+            printf("Values lower or equal to than median %d: %d\n",processId,countMinEq);
+            
+        #endif
+        assert((countMax = partLength/2) && (countMinEq = partLength/2));
     }
-    if((countMax<=size/2)&&(countMin<=size/2)){  //Checks if both the lower and higher values occupy less than 50% of the total array.
-        printf("VALIDATION PASSED!\n");
-    }else{
-        printf("VALIDATION FAILED!\n");
-    }
+    
 
 
-	printf("Values greater than median %d: %d\n",processId,countMax);
-    printf("Values equal to median %d: %d\n",processId,countEq);
-    printf("Values lower than median %d: %d\n",processId,countMin);
+	
 }
 
 /***Checks if tranfer point transactions have been made succesfully for both serial and parallel execution***/
@@ -191,31 +210,31 @@ void validationPartition(float median,int size,float *numberPart,int processId,i
 }
 
 
-void validationPartitionST(float median,int size,float *numberPart,int l)
+void validationPartitionST(float *medians,int size,float *numberPart,int multiplicity)
 {
     int countMinEq;
     int countMax;
     int i,j;
-    int partSize = size / (1<<l);
+    int partLength = size / multiplicity;
 
-    for(j = 0;j < (1<<l);j++){
+    for(i = 0;i < multiplicity;i++){
         countMinEq = 0;
         countMax = 0;
-        for(i = ((1<<l) * j) * partSize;i < ((1<<l) * j + 1) * partSize;i++){
-            if((i >= ((1<<l) * j) * partSize + partSize / 2) && numberPart[i] > median)
-                countMax++;
-            else if((i < ((1<<l) * j) * partSize + partSize / 2) && numberPart[i] <= median)
+        for(j = i * partLength;j < (i + 1) * partLength;j++){
+            if((j < i * partLength + partLength / 2) && numberPart[j] <= medians[j/partLength])
                 countMinEq++;
+            else if((j >= i * partLength + partLength / 2) && numberPart[i] > medians[j/partLength])
+                countMax++;
         }
         #ifdef DEBUG
-            if( countMax == partSize/2 && countMinEq == partSize/2 )        //If validation is Serial
-                printf("VALIDATION PASSED!\n");
+            if( countMax == partLength/2 && countMinEq == partLength/2 )        //If validation is Serial
+                printf("VALIDATIONpartSt PASSED!\n,%d,%d",j/partLength,multiplicity);
             else
-                printf("VALIDATION FAILED!, countMinEq = %d, countMax = %d\n",countMinEq,countMax);
+                printf("VALIDATIONpartSt FAILED!, countMinEq = %d, countMax = %d,%d,%d\n",countMinEq,countMax,j/partLength,multiplicity);
             printf("Values greater than median : %d\n",countMax);
             printf("Values equal or less than the median : %d\n",countMinEq);
         #endif
-        assert( countMax == partSize/2 && countMinEq == partSize/2);        //If validation is Serial
+        assert( countMax == partLength/2 && countMinEq == partLength/2);        //If validation is Serial
     }
 }
 
@@ -713,27 +732,25 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
 }
 
 //Reoder an array according to a pivot value
-void transferPointsST(float* distances,float *medians,floatType **pointsCoords,int size,int coordSize){
-    int i,j;
+void transferPointsST(float* distances,float *medians,floatType **pointsCoords,int size,int multiplicity){
+    int i,j,k;
     floatType *temp;
-    //Initial value of j as size - 1 is implemented using the predecrement of j [--j]
-    j = size-1;
-    for(i = 0;i < size && i < j;i++){
-        if(distances[i] > medians[i]){
-            //Scan until you find a proper point to transfer
-            while(distances[j] > medians[i] && i < j)
-                j--;
+    int partLength = size / multiplicity;
 
-            temp = pointsCoords[i];
-            pointsCoords[i] = pointsCoords[j];
-            pointsCoords[j] = temp;
-            /*
-            for(k = 0;k < coordSize;k++){
-                temp = pointsCoords[i][k];
-                pointsCoords[i][k] = pointsCoords[j][k];
-                pointsCoords[j][k] = temp;
-            }*/
-            j--;
+    for(i = 0;i < multiplicity;i++){
+        k = (i + 1) * partLength - 1;
+        for(j = i * partLength;j < (i + 1) * partLength;j++){
+            if(distances[j] > medians[j/partLength]){
+                //Scan until you find a proper point to transfer
+                while(distances[k] > medians[j/partLength] && j < k)
+                    k--;
+
+                temp = pointsCoords[j];
+                pointsCoords[j] = pointsCoords[k];
+                pointsCoords[k] = temp;
+                k--;  
+            }
+            
         }
     }
 }
@@ -788,7 +805,7 @@ void read_csv(int row, int col, char *filename, floatType **data, int rowOffset,
 
 
 /****Partitions the Array into larger and smaller than the pivot values****/
-void partition (float *array, int elements, float pivot, float **arraysmall, float **arraybig, int *endsmall, int *endbig)
+void partition(float *array, int elements, float pivot, float **arraysmall, float **arraybig, int *endsmall, int *endbig)
 {
     int right=elements-1;
     int left=0;
@@ -910,14 +927,14 @@ float selection(float *array,int number)
     return median;
 }
 
-float* multiSelection(float *array,int size,int l)
+float* multiSelection(float *array,int size,int multiplicity)
 {
     float *medians,*tempArray;
     int i,j;
-    int partLength = size / 1<<l;
-    medians = (float*)malloc( (1<<l) * sizeof(float) );
+    int partLength = size / multiplicity;
+    medians = (float*)malloc( multiplicity * sizeof(float) );
     tempArray =(float*)malloc( partLength * sizeof(float) );
-    for(i = 0;i < (1<<l);i++){
+    for(i = 0;i < multiplicity;i++){
         for(j = 0;j < partLength;j++)
             tempArray[j] = array[i * partLength + j];
         medians[i] = selection(tempArray,partLength);

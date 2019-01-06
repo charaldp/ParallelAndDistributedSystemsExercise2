@@ -89,9 +89,7 @@ int main(int argc, char **argv)
             srand(time(NULL)*(team+1)*(l+1)*(processId+1));
             vantagePoint = rand() % partLength;
             printf("Iteration %d Team%dVantagePoint = %d\n",l,team,vantagePoint);
-            for (i = 0; i < coordSize; i++) {
-                vantagePointCoords = pointsCoords[vantagePoint];
-            }
+            vantagePointCoords = pointsCoords[vantagePoint];
 
                 //MPI_Sendnudes(&partLength,1,MPI_INT,processId,MPI_COMM_WORLD);
                 MPI_Bcast(vantagePointCoords,coordSize,MPI_floatType,child_Id[l],childComm[l]);
@@ -140,18 +138,25 @@ int main(int argc, char **argv)
     }
     // Go serial
     medians = (float*)malloc(sizeof(float));
+    vantagePoints = (int*)malloc(sizeof(int));
+    int multiplicity;
     for(l = l_parallel_max;l<log(size)/log(2);l++){
-        medians = (float*)realloc(medians,(1 << (l - l_parallel_max))*sizeof(float));
-        for(i = 0;i < 1<<(l - l_parallel_max);i++){
-            srand(time(NULL)*(l+1)*(processId+1));
-            vantagePoints[i] = rand() % partLength; 
+        multiplicity = 1<<(l - l_parallel_max);
+        medians = (float*)realloc(medians,multiplicity * sizeof(float));
+        vantagePoints = (int*)realloc(vantagePoints,multiplicity * sizeof(int));
+        for(i = 0;i < multiplicity;i++){
+            srand(time(NULL)*(l+1)*(processId+1)*(i+1));
+            vantagePoints[i] = i * (partLength/multiplicity) + (rand() % (partLength/multiplicity));
         }
-        calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         struct timeval first, second, lapsed;
         struct timezone tzp;
         gettimeofday(&first, &tzp);
-        medians = multiSelection(distances, partLength, l - l_parallel_max);
+        calculateDistancesST(distances,pointsCoords,vantagePoints,partLength,multiplicity,coordSize);
+        medians = multiSelection(distances, partLength, multiplicity);
+        transferPointsST(distances,medians,pointsCoords,partLength,coordSize);
         gettimeofday(&second, &tzp);
+        for(i = 0;i < multiplicity;i++)
+            printf("l = %d,Pid = %d, medians[%d] = %f\n",l,processId,i,medians[i]);
         if(first.tv_usec > second.tv_usec)
         {
             second.tv_usec += 1000000;
@@ -159,10 +164,10 @@ int main(int argc, char **argv)
         }
         lapsed.tv_usec = second.tv_usec - first.tv_usec;
         lapsed.tv_sec = second.tv_sec - first.tv_sec;
-        validationST(median,partLength,distances,processId);
-        validationPartitionST(median,partLength,distances,l - l_parallel_max);
+        validationST(medians,partLength,distances,processId,multiplicity);
+        validationPartitionST(medians,partLength,distances,multiplicity);
         printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
-        printf("l = %d, Median at Serial from Team %d: %f\n",l,team,median);
+        printf("l = %d, Median at Serial from Team %d: %f\n",l,team,medians);
         printf("Pid %d CounterMax = %d\n",processId,count);
         //MPI_Finalize();
         //exit(0);

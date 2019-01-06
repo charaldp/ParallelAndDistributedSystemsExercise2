@@ -23,17 +23,20 @@ void generatePoints(floatType **pointsCoords,int pointsLength,int coordSize,int 
 /***Calculate distance***/
 void calculateDistances(float *distances,floatType **pointCoords,floatType *vantagePointCoords,int pointsLength,int cordSize);
 
+
+void calculateDistancesST(float *distances,floatType **pointCoords,int *vantagePoints,
+                            int pointsLength,int vantagePointsLength,int cordSize);
 /***Validates the stability of the operation****/
 void validation(float median,int partLength,int size,float *numberPart,int processId,MPI_Comm Current_Comm);
 
 /***Validates the stability of the operation (Single Threaded)****/
-void validationST(float median,int size,float *numberPart,int processId);
+void validationST(float *medians,int size,float *numberPart,int processId,int multiplicity);
 
 /***Validates the stability of tranfer point transactions for parallel iteration***/
 void validationPartition(float median,int size,float *numberPart,int processId,int noProcesses);
 
 /***Validates the stability of tranfer point transactions for serial iteration***/
-void validationPartitionST(float median,int size,float *numberPart,int l);
+void validationPartitionST(float *medians,int size,float *numberPart,int l);
 
 /****Part executed only by the Master Node****/
 float masterPart(int noProcesses,int processId,int size,int partLength,float *numberPart,MPI_Comm Current_Comm); //MASTER NODE CODE
