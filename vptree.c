@@ -19,8 +19,8 @@
 
 int main(int argc, char **argv)
 {
-    int team,processId,noProcesses,*child_Id,*child_num,size,partLength,i,l,coordSize,vantagePoint,count;
-    float median,*distances,*vpMedianDistances;
+    int team,processId,noProcesses,*child_Id,*child_num,size,partLength,i,l,coordSize,vantagePoint,*vantagePoints,count;
+    float median,*medians,*distances,*vpMedianDistances;
     floatType **pointsCoords,*vantagePointCoords;
     MPI_Comm *childComm;
     char *dataset;
@@ -120,6 +120,7 @@ int main(int argc, char **argv)
         //transferPointsST(distances,median,pointsCoords,partLength,coordSize);
         calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
 
+        // Count points that need exchange
         count = 0;
         for(i = 0;i < partLength;i++)
             if((child_Id[l] >= child_num[l]/2 && distances[i] <= median) || (child_Id[l] < child_num[l]/2 && distances[i] > median))
@@ -138,17 +139,20 @@ int main(int argc, char **argv)
         printf("l = %d,team = %d, Pid %d CounterMax = %d\n",l,team,processId,count);
     }
     // Go serial
+    medians = (float*)malloc(sizeof(float));
     for(l = l_parallel_max;l<log(size)/log(2);l++){
-        for(i = 0;i < l - l;i++){
-            
+        medians = (float*)realloc(medians,(1 << (l - l_parallel_max))*sizeof(float));
+        for(i = 0;i < 1<<(l - l_parallel_max);i++){
+            srand(time(NULL)*(l+1)*(processId+1));
+            vantagePoints[i] = rand() % partLength; 
         }
         calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         struct timeval first, second, lapsed;
         struct timezone tzp;
         gettimeofday(&first, &tzp);
-        median = selection(distances,partLength);
+        medians = multiSelection(distances, partLength, l - l_parallel_max);
         gettimeofday(&second, &tzp);
-        if(first.tv_usec>second.tv_usec)
+        if(first.tv_usec > second.tv_usec)
         {
             second.tv_usec += 1000000;
             second.tv_sec--;
@@ -169,5 +173,4 @@ int main(int argc, char **argv)
     MPI_Finalize();
     //free(distances);
     exit(0);
-
 }

@@ -45,10 +45,8 @@ void slavePart(int processId,int partLength,float *numberPart,int size,int noPro
 void transferPoints(float *distances,float median,floatType **pointsCoords,int partLength,int coordSize,
     int child_Id,int child_num,MPI_Comm Current_Comm,int count);
 
-void transferPoints2(float *distances,float median,floatType **pointsCoords,int partLength,int coordSize,
-    int child_Id,int child_num,MPI_Comm Current_Comm,int count);
 //Reoder an array according to a pivot value
-void transferPointsST(float* distances,float median,floatType **pointsCoords,int size,int coordSize);
+void transferPointsST(float* distances,float* medians,floatType **pointsCoords,int size,int coordSize);
 
 //Read floating point numbers from a csv file into a matrix <data>
 void read_csv(int row, int col, char *filename, floatType **data, int rowOffset, int colOffset);
@@ -58,6 +56,8 @@ void partition (float *array,int elements, float pivot, float **arraysmall, floa
 
 /***Serial Selection***/
 float selection(float *array,int number);
+
+float* multiSelection(float *array,int size,int l);
 
 #endif
 
