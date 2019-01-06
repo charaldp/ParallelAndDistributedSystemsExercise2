@@ -26,15 +26,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-*/
-/**********************************************************************
- *
- * mpiFindMedian.c
- * Find median and vantage point tree functions 
- * Charalampos Papadiakos <charaldp@auth.gr>
- * Time-stamp: <2019-01-4>
- *
- **********************************************************************/
+
+**********************************************************************
+*
+* mpiFindMedian.c
+* Find median fynction as implemented by Athanassios Kintsakis and vantage point tree functions 
+* Charalampos Papadiakos <charaldp@auth.gr>
+* Time-stamp: <2019-01-4>
+*
+**********************************************************************/
 
 
 #include <stdio.h>
@@ -97,11 +97,10 @@ void calculateDistances(float *distances,floatType **pointCoords,floatType *vant
         }
         distances[i] = sqrt((double)distances[i]);
     }
-
 }
 
 /***Validates the stability of the operation****/
-void validation(float median,int partLength,int size,float *numberPart,int processId,MPI_Comm Current_Comm,int *counts)
+void validation(float median,int partLength,int size,float *numberPart,int processId,MPI_Comm Current_Comm)
 {   
     MPI_Bcast(&median,1,MPI_FLOAT,0,Current_Comm);
 	int countMin=0;
@@ -119,10 +118,6 @@ void validation(float median,int partLength,int size,float *numberPart,int proce
         }
 
     }
-    counts[0] = countMax;
-    counts[1] = countEq;
-    counts[2] = countMin;
-    printf("I am %d, countMax = %d\n",processId,countMax);
     MPI_Reduce(&countMax,&sumMax,1,MPI_INT,MPI_SUM,0,Current_Comm);
     MPI_Reduce(&countMin,&sumMin,1,MPI_INT,MPI_SUM,0,Current_Comm);
     MPI_Reduce(&countEq,&sumEq,1,MPI_INT,MPI_SUM,0,Current_Comm);
@@ -132,16 +127,17 @@ void validation(float median,int partLength,int size,float *numberPart,int proce
             printf("VALIDATION PASSED!\n");
         else
             printf("VALIDATION FAILED!\n");
-
-
-	printf("Values greater than median: %d\n",sumMax);
-    printf("Values equal to median: %d\n",sumEq);
-   	printf("Values lower than median: %d\n",sumMin);
+        assert((sumMax <= size/2) && (sumMin <= size/2));
+        #ifdef DEBUG
+        	printf("Values greater than median: %d\n",sumMax);
+            printf("Values equal to median: %d\n",sumEq);
+           	printf("Values lower than median: %d\n",sumMin);
+        #endif
     }
 }
 
 /***Validates the stability of the operation (Single Threaded)****/
-void validationST(float median,int size,float *numberPart,int *counts,int processId)
+void validationST(float median,int size,float *numberPart,int processId)
 {
 	int countMin=0;
     int countMax=0;
@@ -165,41 +161,65 @@ void validationST(float median,int size,float *numberPart,int *counts,int proces
 	printf("Values greater than median %d: %d\n",processId,countMax);
     printf("Values equal to median %d: %d\n",processId,countEq);
     printf("Values lower than median %d: %d\n",processId,countMin);
-    counts[0] = countMax;
-    counts[1] = countEq;
-    counts[2] = countMin;
 }
 
-void validationPartition(float median,int size,float *numberPart,int *counts,int processId)
+/***Checks if tranfer point transactions have been made succesfully for both serial and parallel execution***/
+void validationPartition(float median,int size,float *numberPart,int processId,int noProcesses)
 {
-    int countMin=0;
-    int countMax=0;
-    int countEq=0;
     int i;
-    for(i=0;i<size;i++)
-    {
-        if(numberPart[i]>median)
+    int countMinEq = 0;
+    int countMax = 0;
+    for(i = 0;i < size;i++){
+        if(numberPart[i] > median)
             countMax++;
-        else if(numberPart[i]<median)
-            countMin++;
-        else
-            countEq++;
+        else if( numberPart[i] <= median)
+            countMinEq++;
     }
-    if((countMax<=size/2)&&(countMin<=size/2))  //Checks if both the lower and higher values occupy less than 50% of the total array.
-        printf("VALIDATION PASSED!\n");
-    else
-        printf("VALIDATION FAILED!\n");
+    #ifdef DEBUG
+        if((processId < noProcesses/2 && countMax == 0 && countMinEq == size)    //Check that all point in the process that has id lower than noProcesses' half are equal or less than the median
+         ||(processId >= noProcesses/2 && countMax == size && countMinEq == 0))  //Check that all point in the process that has id higher or equal than noProcesses' half are greater than the median
+            printf("VALIDATION PASSED!\n");
+        else
+            printf("VALIDATION FAILED!,id = %d, countMinEq = %d, countMax = %d\n",processId,countMinEq,countMax);
+        printf("Values greater than median %d: %d\n",processId,countMax);
+        printf("Values equal or less than the median %d: %d\n",processId,countMinEq);
+    #endif
+    assert((processId < noProcesses/2 && countMax == 0 && countMinEq == size)   //Check that all point in the process that has id lower than noProcesses' half are equal or less than the median
+         ||(processId >= noProcesses/2 && countMax == size && countMinEq == 0));//Check that all point in the process that has id higher or equal than noProcesses' half are greater than the median
+    
+}
 
-    printf("Values greater than median %d: %d\n",processId,countMax);
-    printf("Values equal to median %d: %d\n",processId,countEq);
-    printf("Values lower than median %d: %d\n",processId,countMin);
-    counts[0] = countMax;
-    counts[1] = countEq;
-    counts[2] = countMin;
+
+void validationPartitionST(float median,int size,float *numberPart,int l)
+{
+    int countMinEq;
+    int countMax;
+    int i,j;
+    int partSize = size / (1<<l);
+
+    for(j = 0;j < (1<<l);j++){
+        countMinEq = 0;
+        countMax = 0;
+        for(i = ((1<<l) * j) * partSize;i < ((1<<l) * j + 1) * partSize;i++){
+            if((i >= ((1<<l) * j) * partSize + partSize / 2) && numberPart[i] > median)
+                countMax++;
+            else if((i < ((1<<l) * j) * partSize + partSize / 2) && numberPart[i] <= median)
+                countMinEq++;
+        }
+        #ifdef DEBUG
+            if( countMax == partSize/2 && countMinEq == partSize/2 )        //If validation is Serial
+                printf("VALIDATION PASSED!\n");
+            else
+                printf("VALIDATION FAILED!, countMinEq = %d, countMax = %d\n",countMinEq,countMax);
+            printf("Values greater than median : %d\n",countMax);
+            printf("Values equal or less than the median : %d\n",countMinEq);
+        #endif
+        assert( countMax == partSize/2 && countMinEq == partSize/2);        //If validation is Serial
+    }
 }
 
 /****Part executed only by the Master Node****/
-float masterPart(int noProcesses,int processId,int size,int partLength,float *numberPart,MPI_Comm Current_Comm,int *countOuter) //MASTER NODE CODE
+float masterPart(int noProcesses,int processId,int size,int partLength,float *numberPart,MPI_Comm Current_Comm) //MASTER NODE CODE
 {
     int elements,i,keepBigSet,sumSets,finalize,randomNode,k,*activeNodes;
     int endSmall=0;
@@ -262,7 +282,7 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
                 lapsed.tv_usec = second.tv_usec - first.tv_usec;
                 lapsed.tv_sec = second.tv_sec - first.tv_sec;
                 printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
-                validation(median,partLength,size,numberPart,0,Current_Comm,countOuter);
+                validation(median,partLength,size,numberPart,0,Current_Comm);
                 MPI_Barrier(Current_Comm);
                 free(pivotArray);
                 return median;
@@ -386,7 +406,7 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
             lapsed.tv_usec = second.tv_usec - first.tv_usec;
             lapsed.tv_sec = second.tv_sec - first.tv_sec;
             printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
-		    validation(median,partLength,size,numberPart,processId,Current_Comm,countOuter);
+		    validation(median,partLength,size,numberPart,processId,Current_Comm);
             MPI_Barrier(Current_Comm);
             free(pivotArray);
             return median;
@@ -415,7 +435,7 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
 }
 
 /***Executed only by Slave nodes!!*****/
-void slavePart(int processId,int partLength,float *numberPart,int size,int noProcesses,MPI_Comm Current_Comm,int *countOuter)  //code here is for the cheap slaves :P
+void slavePart(int processId,int partLength,float *numberPart,int size,int noProcesses,MPI_Comm Current_Comm)  //code here is for the cheap slaves :P
 {
 	int dropoutflag,elements,i,sumSets,finalize,keepBigSet,randomNode;
     int endSmall=0;
@@ -455,7 +475,7 @@ void slavePart(int processId,int partLength,float *numberPart,int size,int noPro
             if(finalize==1)
             {
                 float median=0;
-                validation(median,partLength,size,numberPart,processId,Current_Comm,countOuter);
+                validation(median,partLength,size,numberPart,processId,Current_Comm);
                 MPI_Barrier(Current_Comm);
                 return ;
             }
@@ -508,7 +528,7 @@ void slavePart(int processId,int partLength,float *numberPart,int size,int noPro
         if(finalize==1)
         {
             float median=0;
-            validation(median,partLength,size,numberPart,processId,Current_Comm,countOuter);
+            validation(median,partLength,size,numberPart,processId,Current_Comm);
             MPI_Barrier(Current_Comm);
             return ;
         }
@@ -558,20 +578,20 @@ void slavePart(int processId,int partLength,float *numberPart,int size,int noPro
 }
 
 void transferPoints(float *distances,float median,floatType **pointsCoords,int partLength,int coordSize,
-    int child_Id,int child_num,MPI_Comm Current_Comm,int *counts){
+    int child_Id,int child_num,MPI_Comm Current_Comm,int count){
     int i,j,k,offset,*allDests,*dests,destSize,partnersCounter,*allCounters;
     if(child_Id==0)
         allCounters = (int*)malloc(child_num*sizeof(int));
     MPI_Status Stat;
-    int myCounter = counts[0];
+    int myCounter = count;
     int dest = (child_Id < child_num / 2) ? (child_Id + child_num / 2) : (child_Id - child_num / 2);
-    #ifdef DEBUG
+    #ifdef DEBUG_TRANSFER
     printf("%d Sending counter to...%d, myCounter = [%d]\n",child_Id,dest,myCounter);
     #endif
     MPI_Gather(&myCounter, 1, MPI_INT, allCounters, 1, MPI_INT, 0,Current_Comm);
     //Process the counters array for proper scattering
     if(child_Id == 0){
-        #ifdef DEBUG_TRANSFER
+        #ifdef DEBUG
         printf("allCountersGathered = |");
         for(i = 0;i < child_num;i++)
             printf("%d|",allCounters[i]);
@@ -582,7 +602,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
             allCounters[i] = allCounters[i + child_num/2];
             allCounters[i + child_num/2] = j;
         }
-        #ifdef DEBUG_TRANSFER
+        #ifdef DEBUG
         printf("allCountersScattering = |");
         for(i = 0;i < child_num;i++)
             printf("%d|",allCounters[i]);
@@ -590,33 +610,26 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
         #endif
     }
     MPI_Scatter(allCounters, 1, MPI_INT, &partnersCounter, 1, MPI_INT,0,Current_Comm);
-    #ifdef DEBUG
-        printf("%d Recieved counter from master, partnersCounter = [%d]\n",child_Id,partnersCounter);
+    #ifdef DEBUG_TRANSFER
+        printf("%d Recieved counter from partner %d, partnersCounter = [%d]\n",child_Id,dest,partnersCounter);
     #endif
 
     MPI_Barrier(Current_Comm);
-    for(i = 0,offset = 0;i < partLength && offset == 0;i++){
+    for(i = 0;i < partLength;i++){
         if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
-            #ifdef DEBUG
+            #ifdef DEBUG_TRANSFER
                 printf("%d Sending distances[%d] to...%d\n",child_Id,i,dest);
             #endif
             //pointBuffer = pointsCoords[i];
             MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dest, 1, dest, 1,Current_Comm, &Stat);
             //pointsCoords[i] = pointBuffer;
             //printf("%d Recieved from...%d, myCounter = [%d], partnersCounter = [%d],point = [%f,%f,%f]\n",child_Id,dest,myCounter,partnersCounter,pointsCoords[i][0],pointsCoords[i][1],pointsCoords[i][2]);
-            if(child_Id < child_num / 2){
-                myCounter--;
-                partnersCounter++;
-                if(myCounter == 0 || partnersCounter == partLength)
-                    offset = 1;
+            myCounter--;
+            partnersCounter--;
+            if(myCounter == 0 || partnersCounter == 0){
+                i++;
+                break;
             }
-            else{
-                myCounter++;
-                partnersCounter--;
-                if(myCounter == partLength || partnersCounter == 0)
-                    offset = 1;
-            }
-
         }
     }
     
@@ -624,18 +637,18 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
     MPI_Barrier(Current_Comm);
     if(child_Id==0){
         destSize = 0;
-        #ifdef DEBUG_TRANSFER
+        #ifdef DEBUG
             printf("Final allCounters = |");
         #endif
+        // Find the maximum remaining number of Point transactions on any process
         for(j = 0;j < child_num;j++){
-            if((j < child_num/2 && allCounters[j] > destSize) 
-                || (j >= child_num/2 && partLength - allCounters[j] > destSize))
-                destSize = (j < child_num/2) ? (allCounters[j]):(partLength - allCounters[j]);
-            #ifdef DEBUG_TRANSFER
+            if(allCounters[j] > destSize) 
+                destSize = allCounters[j];
+            #ifdef DEBUG
                 printf("%d|",allCounters[j]);
             #endif
         }
-        #ifdef DEBUG_TRANSFER
+        #ifdef DEBUG
             printf("\n,destSize = %d\n",destSize);
         #endif
         allDests = (int*)malloc(destSize * child_num * sizeof(int));
@@ -643,8 +656,8 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
             allDests[j] = -1;
         for(j = 0;j < child_num/2;j++){
             for(k = child_num/2;k < child_num && allCounters[j] > 0;k++){
-                while(allCounters[k] < partLength && allCounters[j] > 0){
-                    allCounters[k]++;
+                while(allCounters[k] > 0 && allCounters[j] > 0){
+                    allCounters[k]--;
                     allCounters[j]--;
                     offset = 0; 
                     while(allDests[j*destSize + offset]!=-1){offset++;}
@@ -655,7 +668,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
                 }
             }            
         }
-        #ifdef DEBUG_TRANSFER
+        #ifdef DEBUG
         printf("allDests = ");
         for(j = 0;j < child_num;j++){
             printf("|");
@@ -679,7 +692,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
                 i < partLength && offset < destSize && dests[offset]!=-1;
                 i++){
                 if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
-                    #ifdef DEBUG
+                    #ifdef DEBUG_TRANSFER
                         printf("%d Sending distances[%d] to...%d\n",child_Id,i,dests[offset]);
                     #endif
                     //pointBuffer = pointsCoords[i];
@@ -696,7 +709,93 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
     #ifdef DEBUG_TRANSFER
         printf("I'm done %d, myCounter = %d, i = %d\n",child_Id,myCounter,i);
     #endif
-    //return pointsCoords;
+}
+
+void transferPoints2(float *distances,float median,floatType **pointsCoords,int partLength,int coordSize,
+    int child_Id,int child_num,MPI_Comm Current_Comm,int count){
+    int i,j,k,offset,*allDests,*dests,destSize,partnersCounter,*allCounters;
+    if(child_Id==0)
+        allCounters = (int*)malloc(child_num*sizeof(int));
+    MPI_Status Stat;
+    int myCounter = count;
+    int dest = (child_Id < child_num / 2) ? (child_Id + child_num / 2) : (child_Id - child_num / 2);
+    
+    MPI_Gather(&myCounter, 1, MPI_INT, allCounters, 1, MPI_INT, 0,Current_Comm);
+    MPI_Barrier(Current_Comm);
+    if(child_Id==0){
+        destSize = 0;
+        #ifdef DEBUG
+            printf("Final allCounters = |");
+        #endif
+        // Find the maximum remaining number of Point transactions on any process
+        for(j = 0;j < child_num;j++){
+            if(allCounters[j] > destSize) 
+                destSize = allCounters[j];
+            #ifdef DEBUG
+                printf("%d|",allCounters[j]);
+            #endif
+        }
+        #ifdef DEBUG
+            printf("\n,destSize = %d\n",destSize);
+        #endif
+        allDests = (int*)malloc(destSize * child_num * sizeof(int));
+        for(j = 0;j < destSize * child_num;j++)
+            allDests[j] = -1;
+        for(j = 0;j < child_num/2;j++){
+            for(k = child_num/2;k < child_num && allCounters[j] > 0;k++){
+                while(allCounters[k] > 0 && allCounters[j] > 0){
+                    allCounters[k]--;
+                    allCounters[j]--;
+                    offset = 0; 
+                    while(allDests[j*destSize + offset]!=-1){offset++;}
+                    allDests[j*destSize + offset] = k;
+                    offset = 0; 
+                    while(allDests[k*destSize + offset]!=-1){offset++;}
+                    allDests[k*destSize + offset] = j;
+                }
+            }            
+        }
+        #ifdef DEBUG
+        printf("allDests = ");
+        for(j = 0;j < child_num;j++){
+            printf("|");
+            for(k = 0;k < destSize;k++)
+                printf("%d,",allDests[j*destSize+k]);
+        }
+        printf("|\n");
+        #endif
+    }
+    MPI_Bcast(&destSize,1,MPI_INT,0,Current_Comm);
+
+    //Redistribute points that were not equally placed accross "symmetric" procceses
+    if(destSize > 0){
+        dests = (int*)malloc(destSize * sizeof(int));
+        MPI_Barrier(Current_Comm);
+        MPI_Scatter(allDests, destSize, MPI_INT, dests, destSize, MPI_INT,0,Current_Comm);
+        //printf("I am %d my dests are %d\n",child_Id,dests[0]);    
+        
+        if(dests[0] != -1){
+            for(offset = 0; //i's value has been left unchanged and the point transfer continues right from the point it has stopped
+                i < partLength && offset < destSize && dests[offset]!=-1;
+                i++){
+                if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
+                    #ifdef DEBUG_TRANSFER
+                        printf("%d Sending distances[%d] to...%d\n",child_Id,i,dests[offset]);
+                    #endif
+                    //pointBuffer = pointsCoords[i];
+                    MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dests[offset], 1, dests[offset], 1,Current_Comm, &Stat);
+                    //pointsCoords[i] = pointBuffer;
+                    offset++;
+                }
+                
+            }
+
+        }
+        MPI_Barrier(Current_Comm);
+    }
+    #ifdef DEBUG_TRANSFER
+        printf("I'm done %d, myCounter = %d, i = %d\n",child_Id,myCounter,i);
+    #endif
 }
 
 //Reoder an array according to a pivot value

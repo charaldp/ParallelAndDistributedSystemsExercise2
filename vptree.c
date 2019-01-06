@@ -19,7 +19,7 @@
 
 int main(int argc, char **argv)
 {
-    int team,processId,noProcesses,*child_Id,*child_num,size,partLength,i,l,coordSize,vantagePoint,*counts;
+    int team,processId,noProcesses,*child_Id,*child_num,size,partLength,i,l,coordSize,vantagePoint,count;
     float median,*distances,*vpMedianDistances;
     floatType **pointsCoords,*vantagePointCoords;
     MPI_Comm *childComm;
@@ -27,6 +27,7 @@ int main(int argc, char **argv)
     MPI_Init (&argc, &argv);                        // starts MPI //
     MPI_Comm_rank (MPI_COMM_WORLD, &processId);     // get current process id //
     MPI_Comm_size (MPI_COMM_WORLD, &noProcesses);   // get number of processes //
+
     size = 1 << atoi(argv[1]);
     coordSize = atoi(argv[2]);
     
@@ -38,7 +39,6 @@ int main(int argc, char **argv)
     }else if(argc == 4){
         dataset = argv[3];
     }
-    counts = (int *)malloc(3 * sizeof(int));
     partLength = size/noProcesses;
     assert(size%noProcesses == 0);
     //Allocating memory for data of each process
@@ -53,29 +53,36 @@ int main(int argc, char **argv)
     // cities.txt requires an column offset of 4 and has 2 useful cols
     if(argc == 4){
         printf("Dataset : %s\n",dataset);
-        if(strcmp(dataset,"cities.txt")==0)
-            read_csv(partLength, coordSize, dataset, pointsCoords,processId * partLength,4);
-        else
-            read_csv(partLength, coordSize, dataset, pointsCoords,processId * partLength,0);
+        read_csv(partLength, coordSize, dataset, pointsCoords,processId * partLength,
+                 strcmp(dataset,"cities.txt") ? 0 : 4);      //Am I reading from cities.txt?
     }else{
         generatePoints(pointsCoords,partLength,coordSize,processId);
     }
 
+    //Reading data from a file using rowOffset causes asynchrony
     MPI_Barrier(MPI_COMM_WORLD);
 
-    /*dataPartition*/
-    childComm = (MPI_Comm*)malloc( ( log(noProcesses)/log(2) + 1) * sizeof(MPI_Comm));
-    child_num = (int*)malloc( ( log(noProcesses)/log(2) + 1) * sizeof(int));
-    child_Id = (int*)malloc( ( log(noProcesses)/log(2) + 1) * sizeof(int));
-    MPI_Comm Current_Comm = MPI_COMM_WORLD;
-    for(l = 0;l < log(noProcesses)/log(2); l++){
+    int l_parallel_max = log(noProcesses)/log(2);
+    childComm = (MPI_Comm*)malloc( l_parallel_max * sizeof(MPI_Comm));
+    child_num = (int*)malloc( l_parallel_max * sizeof(int));
+    child_Id = (int*)malloc( l_parallel_max * sizeof(int));
+    
+    team = processId/noProcesses;
 
-        team = processId/(noProcesses/(1<<l));
-        
-        MPI_Comm_split(Current_Comm, team, processId, &childComm[l]);
-        MPI_Comm_rank(childComm[l], &child_Id[l]);     // get current process id //
-        MPI_Comm_size(childComm[l], &child_num[l]); 
-        printf("l = %d, I %d from Team - %d, was split to %d of %d children\n",l,processId,team,child_Id[l],child_num[l]);
+    for(l = 0,childComm[l] = MPI_COMM_WORLD,child_Id[l] = processId,child_num[l] = noProcesses;
+        l < l_parallel_max;
+        l++){
+
+        if(l > 0){
+            team = processId/(noProcesses/(1<<l));
+            MPI_Comm_split(childComm[l-1], team, processId, &childComm[l]);
+            MPI_Comm_rank(childComm[l], &child_Id[l]);     // get current process id //
+            MPI_Comm_size(childComm[l], &child_num[l]);
+        }
+
+        #ifdef DEBUG_MAIN
+            printf("l = %d, I %d from Team - %d, was split to %d of %d children\n",l,processId,team,child_Id[l],child_num[l]);
+        #endif
 
         if(child_Id[l]==0)
         {
@@ -86,8 +93,7 @@ int main(int argc, char **argv)
                 vantagePointCoords = pointsCoords[vantagePoint];
             }
 
-                //MPI_Sendnudes(&partLength,1,MPI_INT,processId,MPI_COMM_WORLD); /*Test ( ͡° ͜ʖ ͡°)*/
-                
+                //MPI_Sendnudes(&partLength,1,MPI_INT,processId,MPI_COMM_WORLD);
                 MPI_Bcast(vantagePointCoords,coordSize,MPI_floatType,child_Id[l],childComm[l]);
                 calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         }
@@ -95,42 +101,47 @@ int main(int argc, char **argv)
         {
 
             MPI_Bcast(vantagePointCoords,coordSize,MPI_floatType,0,childComm[l]);
-            
             calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         }
-        #ifdef DEBUG
-        for(i=0; i<partLength; i++)
+        #ifdef DEBUG_DIST
+        for(i = 0; i<partLength; i++)
             printf("distBefore %d = |%f|\n",i+child_Id[l]*partLength,distances[i]);
         #endif
         if(child_Id[l]==0)
         {
-            median = masterPart(child_num[l],child_Id[l],size/(1<<l),partLength,distances,childComm[l],counts);
+            median = masterPart(child_num[l],child_Id[l],size/(1<<l),partLength,distances,childComm[l]);
             printf("l = %d,Median from team %d is: %f\n",l,team,median);
         }
         else{
-            slavePart(child_Id[l],partLength,distances,size/(1<<l),child_num[l],childComm[l],counts);
+            slavePart(child_Id[l],partLength,distances,size/(1<<l),child_num[l],childComm[l]);
         }
         MPI_Bcast(&median,1,MPI_FLOAT,0,childComm[l]);
         MPI_Barrier(MPI_COMM_WORLD);
         //transferPointsST(distances,median,pointsCoords,partLength,coordSize);
         calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
- 
-        transferPoints(distances,median,pointsCoords,partLength,coordSize,child_Id[l],child_num[l],childComm[l],counts);
-        MPI_Barrier(MPI_COMM_WORLD);
+
+        count = 0;
+        for(i = 0;i < partLength;i++)
+            if((child_Id[l] >= child_num[l]/2 && distances[i] <= median) || (child_Id[l] < child_num[l]/2 && distances[i] > median))
+                count++;
+
+        transferPoints(distances,median,pointsCoords,partLength,coordSize,child_Id[l],child_num[l],childComm[l],count);
+
         calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
-        #ifdef DEBUG
+        #ifdef DEBUG_DIST
         for(i=0; i<partLength; i++)
             printf("distAfter %d = |%f|\n",i+processId*partLength,distances[i]);
-        #endif
-        validationST(median,partLength,distances,counts,processId);
-        assert((child_Id[l] < child_num[l]/2 && (counts[1] + counts[2]) == partLength) || (child_Id[l] >= child_num[l]/2 && counts[0] == partLength));
         MPI_Barrier(MPI_COMM_WORLD);
-        Current_Comm = childComm[l];
-        printf("l = %d,team = %d, Pid %d CounterMax = %d\n",l,team,processId,counts[0]);
+        #endif
+        validationPartition(median,partLength,distances,child_Id[l],child_num[l]);
+        MPI_Barrier(MPI_COMM_WORLD);
+        printf("l = %d,team = %d, Pid %d CounterMax = %d\n",l,team,processId,count);
     }
     // Go serial
-    for(;l<log(size)/log(2);l++){
-
+    for(l = l_parallel_max;l<log(size)/log(2);l++){
+        for(i = 0;i < l - l;i++){
+            
+        }
         calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         struct timeval first, second, lapsed;
         struct timezone tzp;
@@ -144,10 +155,11 @@ int main(int argc, char **argv)
         }
         lapsed.tv_usec = second.tv_usec - first.tv_usec;
         lapsed.tv_sec = second.tv_sec - first.tv_sec;
-        validationST(median,partLength,distances,&counts[0],processId);
+        validationST(median,partLength,distances,processId);
+        validationPartitionST(median,partLength,distances,l - l_parallel_max);
         printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
         printf("l = %d, Median at Serial from Team %d: %f\n",l,team,median);
-        printf("Pid %d CounterMax = %d\n",processId,counts[0]);
+        printf("Pid %d CounterMax = %d\n",processId,count);
         //MPI_Finalize();
         //exit(0);
     }
