@@ -154,7 +154,7 @@ int main(int argc, char **argv)
         for(i = 0;i < partLength;i++)
             if((child_Id[l] >= child_num[l]/2 && distances[i] <= median) || (child_Id[l] < child_num[l]/2 && distances[i] > median))
                 count++;
-
+        MPI_Barrier(MPI_COMM_WORLD);
         transferPoints(distances,median,pointsCoords,partLength,coordSize + 1,child_Id[l],child_num[l],childComm[l],count);
         gettimeofday(&second, &tzp);
         vpTimeSum += (double)((second.tv_usec - first.tv_usec)/1.0e6
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
     printf("Total Time elapsed for creation of vptree on process %d is %f sec\n",processId,vpTimeSum);
     if(processId == 0)
         printf("Serial VP tree array size: %d\n",indexOffset);
-    printPoints(pointsCoords,partLength,coordSize+1,processId);
+    //printPoints(pointsCoords,partLength,coordSize+1,processId);
     int index,*allIndices;
     commonTreeVPs = (int*)malloc(((1<<l_parallel_max) - 1)*sizeof(int));
     if(processId == 0)

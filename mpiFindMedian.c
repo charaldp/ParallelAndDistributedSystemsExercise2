@@ -210,7 +210,7 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
     }
     int randomCounter=0;
     int randomCounter2=0;
-    struct timeval first, second, lapsed;
+    struct timeval first, second;
     struct timezone tzp;
     gettimeofday(&first, &tzp);
     for(;;)   //Begin the infinite loop until the median is found.
@@ -654,7 +654,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
         
         if(dests[0] != -1){
             for(offset = 0; //i's value has been left unchanged and the point transfer continues right from the point it has stopped
-                i < partLength && myCounter > 0;
+                i < partLength && offset < destSize;
                 i++){
                 if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
                     #ifdef DEBUG_TRANSFER
@@ -664,7 +664,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
                     MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dests[offset], 1, dests[offset], 1,Current_Comm, &Stat);
                     //pointsCoords[i] = pointBuffer;
                     offset++;
-                    myCounter--;
+                    //myCounter--;
                 }
                 
             }

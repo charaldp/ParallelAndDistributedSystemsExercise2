@@ -1,12 +1,12 @@
 #define DEBUG
-//#define DEBUG_DIST
+#define DEBUG_DIST
 #define DEBUG_TRANSFER
 #define DEBUG_TRANSFER_ST
 #define DEBUG_MAIN
 #define DBBUG_VPST
 
-#define floatType double
-#define MPI_floatType MPI_DOUBLE
+#define floatType float
+#define MPI_floatType MPI_FLOAT
 
 MPI_Status Stat;
 extern double vpTimeSum;
