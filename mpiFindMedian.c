@@ -104,12 +104,14 @@ void calculateDistancesST(float *distances,floatType **pointCoords,int *vantageP
     int i,j,currentVantagePoint;
     for(i=0;i<pointsLength;i++){
         currentVantagePoint = vantagePoints[ i / (pointsLength / vantagePointsLength) ];
+        printf("%d,",currentVantagePoint);
         distances[i] = 0;
         for(j=0;j<cordSize;j++){
             distances[i] = distances[i] + (float)pow((double)pointCoords[i][j] - pointCoords[currentVantagePoint][j],2.0);
         }
         distances[i] = sqrt((double)distances[i]);
     }
+    printf("\n");
 }
 
 /***Validates the stability of the operation****/
@@ -597,6 +599,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
             }
         }
     }
+    printf("ID = %d, i = %d, myCounter = %d, partnersCounter = %d\n",child_Id,i,myCounter,partnersCounter);
     
     MPI_Gather(&myCounter, 1, MPI_INT, allCounters, 1, MPI_INT, 0,Current_Comm);
     MPI_Barrier(Current_Comm);
@@ -682,22 +685,22 @@ void transferPointsST(float* distances,float *medians,floatType **pointsCoords,i
     int i,j,k;
     floatType *temp;
     int partLength = size / multiplicity;
-    #ifdef DEBUG_TRANSFERST
+    #ifdef DEBUG_TRANSFER_ST
     printf("multiplicity = %d\n",multiplicity);
     #endif
 
     for(i = 0;i < multiplicity;i++){
         k = (i + 1) * partLength - 1;
         for(j = i * partLength;j < (i + 1) * partLength && j < k;j++){
-            if(distances[j] > medians[j/partLength]){
+            if(distances[j] > medians[i]){
                 //Scan until you find a proper point to transfer
-                while(distances[k] > medians[j/partLength] && j < k)
+                while(distances[k] > medians[i] && j < k)
                     k--;
                 if(j == k)
                     break;
 
-                #ifdef DEBUG_TRANSFERST
-                    printf("Exchange on array part medians[%d] = %f: distances[%d] = %f, distances[%d] = %f\n",j/partLength,medians[j/partLength],j,distances[j],k,distances[k]);
+                #ifdef DEBUG_TRANSFER_ST
+                    printf("Exchange on array part medians[%d] = %f: distances[%d] = %f, distances[%d] = %f\n",i,medians[i],j,distances[j],k,distances[k]);
                 #endif
 
                 temp = pointsCoords[j];
@@ -747,20 +750,20 @@ void validationPartitionST(float *medians,int size,float *numberPart,int multipl
         countMinEq = 0;
         countMax = 0;
         for(j = i * partLength;j < (i + 1) * partLength;j++){
-            if((j < i * partLength + partLength / 2) && numberPart[j] <= medians[j/partLength])
+            if((j < i * partLength + partLength / 2) && numberPart[j] <= medians[i])
                 countMinEq++;
-            else if((j >= i * partLength + partLength / 2) && numberPart[j] > medians[j/partLength])
+            else if((j >= i * partLength + partLength / 2) && numberPart[j] > medians[i])
                 countMax++;
         }
         #ifdef DEBUG
-            if( countMax == partLength/2 && countMinEq == partLength/2 )        //If validation is Serial
+            if( countMax == partLength/2 && countMinEq == partLength/2 )
                 printf("VALIDATIONpartSt PASSED!\n,%d,%d",(j-1)/partLength,multiplicity);
             else
                 printf("VALIDATIONpartSt FAILED!, countMinEq = %d, countMax = %d,%d,%d\n",countMinEq,countMax,(j-1)/partLength,multiplicity);
             printf("Values greater than median : %d\n",countMax);
             printf("Values equal or less than the median : %d\n",countMinEq);
         #endif
-        assert( countMax == partLength/2 && countMinEq == partLength/2);        //If validation is Serial
+        assert( countMax == partLength/2 && countMinEq == partLength/2);
     }
 }
 
@@ -811,7 +814,6 @@ void read_csv(int row, int col, char *filename, floatType **data, int rowOffset,
  * ================================================================================
  * ================================================================================
 */
-
 
 /****Partitions the Array into larger and smaller than the pivot values****/
 void partition(float *array, int elements, float pivot, float **arraysmall, float **arraybig, int *endsmall, int *endbig)

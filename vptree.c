@@ -19,8 +19,8 @@
 
 int main(int argc, char **argv)
 {
-    int team,processId,noProcesses,*child_Id,*child_num,size,partLength,i,l,coordSize,vantagePoint,*vantagePoints,count;
-    float median,*medians,*distances,*vpMedianDistances;
+    int team,processId,noProcesses,*child_Id,*child_num,size,partLength,i,l,coordSize,vantagePoint,*tempVantagePoints,*allVantagePoints,count;
+    float median,*tempMedians,*allMedians,*distances,*vpMedianDistances;
     floatType **pointsCoords,*vantagePointCoords;
     MPI_Comm *childComm;
     char *dataset;
@@ -91,9 +91,9 @@ int main(int argc, char **argv)
             printf("Iteration %d Team%dVantagePoint = %d\n",l,team,vantagePoint);
             vantagePointCoords = pointsCoords[vantagePoint];
 
-                //MPI_Sendnudes(&partLength,1,MPI_INT,processId,MPI_COMM_WORLD);
-                MPI_Bcast(vantagePointCoords,coordSize,MPI_floatType,child_Id[l],childComm[l]);
-                calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
+            //MPI_Sendnudes(&partLength,1,MPI_INT,processId,MPI_COMM_WORLD);
+            MPI_Bcast(vantagePointCoords,coordSize,MPI_floatType,child_Id[l],childComm[l]);
+            calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         }
         else
         {
@@ -136,30 +136,38 @@ int main(int argc, char **argv)
         MPI_Barrier(MPI_COMM_WORLD);
         printf("l = %d,team = %d, Pid %d count = %d\n",l,team,processId,count);
     }
-    // Go serial
-    medians = (float*)malloc(sizeof(float));
-    vantagePoints = (int*)malloc(sizeof(int));
-    int multiplicity;
-    for(l = l_parallel_max;l<log(size)/log(2);l++){
+    // Single Thread Operations
+    tempMedians = (float*)malloc(sizeof(float));
+    tempVantagePoints = (int*)malloc(sizeof(int));
+    allMedians = (float*)malloc(sizeof(float));
+    allVantagePoints = (int*)malloc(sizeof(int));
+    int multiplicity,indexOffset;
+    for(l = l_parallel_max, indexOffset = 0;
+        l<log(size)/log(2);
+        l++, indexOffset += multiplicity){
         multiplicity = 1<<(l - l_parallel_max);
         #ifdef DEBUG_MAIN
         printf("multiplicity = %d\n",multiplicity);
         #endif
-        medians = (float*)realloc(medians,multiplicity * sizeof(float));
-        vantagePoints = (int*)realloc(vantagePoints,multiplicity * sizeof(int));
+        tempMedians = (float*)realloc(tempMedians,multiplicity * sizeof(float));
+        tempVantagePoints = (int*)realloc(tempVantagePoints,multiplicity * sizeof(int));
+        allMedians = (float*)realloc(allMedians,(indexOffset + multiplicity) * sizeof(float));
+        allVantagePoints = (int*)realloc(allVantagePoints,(indexOffset + multiplicity) * sizeof(int));
+
         for(i = 0;i < multiplicity;i++){
             srand(time(NULL)*(l+1)*(processId+1)*(i+1));
-            vantagePoints[i] = i * (partLength/multiplicity) + (rand() % (partLength/multiplicity));
+            tempVantagePoints[i] = i * (partLength/multiplicity) + (rand() % (partLength/(multiplicity*2)));
         }
         struct timeval first, second, lapsed;
         struct timezone tzp;
         gettimeofday(&first, &tzp);
-        calculateDistancesST(distances,pointsCoords,vantagePoints,partLength,multiplicity,coordSize);
-        medians = multiSelection(distances, partLength, multiplicity);
-        transferPointsST(distances,medians,pointsCoords,partLength,multiplicity);
+        calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
+        tempMedians = multiSelection(distances, partLength, multiplicity);
+        calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
+        transferPointsST(distances,tempMedians,pointsCoords,partLength,multiplicity);
         gettimeofday(&second, &tzp);
         for(i = 0;i < multiplicity;i++)
-            printf("l = %d,Pid = %d, medians[%d] = %f\n",l,processId,i,medians[i]);
+            printf("l = %d,Pid = %d, tempMedians[%d] = %f\n",l,processId,i,tempMedians[i]);
         if(first.tv_usec > second.tv_usec)
         {
             second.tv_usec += 1000000;
@@ -167,15 +175,20 @@ int main(int argc, char **argv)
         }
         lapsed.tv_usec = second.tv_usec - first.tv_usec;
         lapsed.tv_sec = second.tv_sec - first.tv_sec;
-        calculateDistancesST(distances,pointsCoords,vantagePoints,partLength,multiplicity,coordSize);
-        validationST(medians,partLength,distances,processId,multiplicity);
-        validationPartitionST(medians,partLength,distances,multiplicity);
+        calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
+        validationST(tempMedians,partLength,distances,processId,multiplicity);
+        calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
+        validationPartitionST(tempMedians,partLength,distances,multiplicity);
         printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
         printf("Pid %d CounterMax = %d\n",processId,count);
+        for(i = 0;i < multiplicity;i++){
+            allMedians[indexOffset + i] = tempMedians[i];
+            allVantagePoints[indexOffset + i] = tempVantagePoints[i];
+        }
         //MPI_Finalize();
         //exit(0);
     }
-    // knn Search
+    // All kNN-Search
 
 
     MPI_Finalize();
