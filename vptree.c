@@ -17,13 +17,19 @@
 #include <sys/time.h>
 #include "mpiFindMedian.h"
 
+
+
+double vpTimeSum = 0, knnTimeSum = 0;
+
 int main(int argc, char **argv)
 {
-    int team,processId,noProcesses,*child_Id,*child_num,size,partLength,i,l,coordSize,vantagePoint,*tempVantagePoints,*allVantagePoints,count;
-    float median,*tempMedians,*allMedians,*distances,*vpMedianDistances;
+    int i,k,l,team,processId,noProcesses,*child_Id,*child_num,size,partLength,coordSize,vantagePoint,*tempVantagePoints,*allVantagePoints,*commonTreeVPs,count;
+    float median,*tempMedians,*allMedians,*distances,*commonTreeMedians;
     floatType **pointsCoords,*vantagePointCoords;
     MPI_Comm *childComm;
     char *dataset;
+    struct timeval first, second;
+    struct timezone tzp;
     MPI_Init (&argc, &argv);                        // starts MPI //
     MPI_Comm_rank (MPI_COMM_WORLD, &processId);     // get current process id //
     MPI_Comm_size (MPI_COMM_WORLD, &noProcesses);   // get number of processes //
@@ -52,7 +58,8 @@ int main(int argc, char **argv)
     // HIGGS has 11.000.000x29 cols rows and CUSY.csv has 500.000x30 cols
     // cities.txt requires an column offset of 4 and has 2 useful cols
     if(argc == 4){
-        printf("Dataset : %s\n",dataset);
+        if(processId == 0)
+            printf("Reading from Dataset : %s\n",dataset);
         read_csv(partLength, coordSize, dataset, pointsCoords,processId * partLength,
                  strcmp(dataset,"cities.txt") ? 0 : 4);      //Am I reading from cities.txt?
     }else{
@@ -72,7 +79,7 @@ int main(int argc, char **argv)
     for(l = 0,childComm[l] = MPI_COMM_WORLD,child_Id[l] = processId,child_num[l] = noProcesses;
         l < l_parallel_max;
         l++){
-
+        gettimeofday(&first, &tzp);
         if(l > 0){
             team = processId/(noProcesses/(1<<l));
             MPI_Comm_split(childComm[l-1], team, processId, &childComm[l]);
@@ -88,7 +95,9 @@ int main(int argc, char **argv)
         {
             srand(time(NULL)*(team+1)*(l+1)*(processId+1));
             vantagePoint = rand() % partLength;
+            #ifdef DEBUG
             printf("Iteration %d Team%dVantagePoint = %d\n",l,team,vantagePoint);
+            #endif
             vantagePointCoords = pointsCoords[vantagePoint];
 
             //MPI_Sendnudes(&partLength,1,MPI_INT,processId,MPI_COMM_WORLD);
@@ -101,6 +110,9 @@ int main(int argc, char **argv)
             MPI_Bcast(vantagePointCoords,coordSize,MPI_floatType,0,childComm[l]);
             calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         }
+        gettimeofday(&second, &tzp);
+        vpTimeSum += (double)((second.tv_usec - first.tv_usec)/1.0e6
+                    + second.tv_sec - first.tv_sec);
         #ifdef DEBUG_DIST
         for(i = 0; i<partLength; i++)
             printf("distBefore %d = |%f|\n",i+child_Id[l]*partLength,distances[i]);
@@ -108,11 +120,14 @@ int main(int argc, char **argv)
         if(child_Id[l]==0)
         {
             median = masterPart(child_num[l],child_Id[l],size/(1<<l),partLength,distances,childComm[l]);
+            #ifdef DEBUG
             printf("l = %d,Median from team %d is: %f\n",l,team,median);
+            #endif
         }
         else{
             slavePart(child_Id[l],partLength,distances,size/(1<<l),child_num[l],childComm[l]);
         }
+        gettimeofday(&first, &tzp);
         MPI_Bcast(&median,1,MPI_FLOAT,0,childComm[l]);
         MPI_Barrier(MPI_COMM_WORLD);
         //transferPointsST(distances,median,pointsCoords,partLength,coordSize);
@@ -125,7 +140,9 @@ int main(int argc, char **argv)
                 count++;
 
         transferPoints(distances,median,pointsCoords,partLength,coordSize,child_Id[l],child_num[l],childComm[l],count);
-
+        gettimeofday(&second, &tzp);
+        vpTimeSum += (double)((second.tv_usec - first.tv_usec)/1.0e6
+                    + second.tv_sec - first.tv_sec);
         calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
         #ifdef DEBUG_DIST
         for(i=0; i<partLength; i++)
@@ -134,7 +151,9 @@ int main(int argc, char **argv)
         #endif
         validationPartition(median,partLength,distances,child_Id[l],child_num[l]);
         MPI_Barrier(MPI_COMM_WORLD);
+        #ifdef DEBUG
         printf("l = %d,team = %d, Pid %d count = %d\n",l,team,processId,count);
+        #endif
     }
     // Single Thread Operations
     tempMedians = (float*)malloc(sizeof(float));
@@ -145,6 +164,7 @@ int main(int argc, char **argv)
     for(l = l_parallel_max, indexOffset = 0;
         l<log(size)/log(2);
         l++, indexOffset += multiplicity){
+        gettimeofday(&first, &tzp);
         multiplicity = 1<<(l - l_parallel_max);
         #ifdef DEBUG_MAIN
         printf("multiplicity = %d\n",multiplicity);
@@ -158,29 +178,22 @@ int main(int argc, char **argv)
             srand(time(NULL)*(l+1)*(processId+1)*(i+1));
             tempVantagePoints[i] = i * (partLength/multiplicity) + (rand() % (partLength/(multiplicity*2)));
         }
-        struct timeval first, second, lapsed;
-        struct timezone tzp;
-        gettimeofday(&first, &tzp);
+
         calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
         tempMedians = multiSelection(distances, partLength, multiplicity);
         calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
         transferPointsST(distances,tempMedians,pointsCoords,partLength,multiplicity);
         gettimeofday(&second, &tzp);
+        vpTimeSum += (double)((second.tv_usec - first.tv_usec)/1.0e6
+                    + second.tv_sec - first.tv_sec);
+        #ifdef DEBUG_VPST
         for(i = 0;i < multiplicity;i++)
             printf("l = %d,Pid = %d, tempMedians[%d] = %f\n",l,processId,i,tempMedians[i]);
-        if(first.tv_usec > second.tv_usec)
-        {
-            second.tv_usec += 1000000;
-            second.tv_sec--;
-        }
-        lapsed.tv_usec = second.tv_usec - first.tv_usec;
-        lapsed.tv_sec = second.tv_sec - first.tv_sec;
+        #endif
         calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
         validationST(tempMedians,partLength,distances,processId,multiplicity);
         calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
         validationPartitionST(tempMedians,partLength,distances,multiplicity);
-        printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
-        printf("Pid %d CounterMax = %d\n",processId,count);
         for(i = 0;i < multiplicity;i++){
             allMedians[indexOffset + i] = tempMedians[i];
             allVantagePoints[indexOffset + i] = tempVantagePoints[i];
@@ -188,8 +201,15 @@ int main(int argc, char **argv)
         //MPI_Finalize();
         //exit(0);
     }
-    // All kNN-Search
+    MPI_Barrier(MPI_COMM_WORLD);
+    printf("Total Time elapsed for creation of vptree on process %d is %f sec\n",processId,vpTimeSum);
+    if(processId == 0)
+        printf("Serial VP tree array size: %d\n",indexOffset);
+    // All kNN-Search using Vantage Point Tree structure
+    for(i = 1;i <= 8;i++){
+        k = 1 << i;
 
+    }
 
     MPI_Finalize();
     //free(distances);

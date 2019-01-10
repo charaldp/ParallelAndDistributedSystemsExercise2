@@ -104,14 +104,12 @@ void calculateDistancesST(float *distances,floatType **pointCoords,int *vantageP
     int i,j,currentVantagePoint;
     for(i=0;i<pointsLength;i++){
         currentVantagePoint = vantagePoints[ i / (pointsLength / vantagePointsLength) ];
-        printf("%d,",currentVantagePoint);
         distances[i] = 0;
         for(j=0;j<cordSize;j++){
             distances[i] = distances[i] + (float)pow((double)pointCoords[i][j] - pointCoords[currentVantagePoint][j],2.0);
         }
         distances[i] = sqrt((double)distances[i]);
     }
-    printf("\n");
 }
 
 /***Validates the stability of the operation****/
@@ -138,16 +136,18 @@ void validation(float median,int partLength,int size,float *numberPart,int proce
     MPI_Reduce(&countEq,&sumEq,1,MPI_INT,MPI_SUM,0,Current_Comm);
     if(processId==0)
     {
+        #ifdef DEBUG
         if((sumMax<=size/2)&&(sumMin<=size/2))  //Checks if both the lower and higher values occupy less than 50% of the total array.
             printf("VALIDATIONpar PASSED!\n");
         else
             printf("VALIDATIONpar FAILED!\n");
-        assert((sumMax <= size/2) && (sumMin <= size/2));
-        #ifdef DEBUG
+
         	printf("Values greater than median: %d\n",sumMax);
             printf("Values equal to median: %d\n",sumEq);
            	printf("Values lower than median: %d\n",sumMin);
         #endif
+        assert((sumMax <= size/2) && (sumMin <= size/2));
+
     }
 }
 
@@ -241,14 +241,8 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
                 finalize=1;
                 MPI_Bcast(&finalize,1,MPI_INT,processId,Current_Comm); //FIRST(OPTIONAL) BROADCAST : WAIT FOR FINALIZE COMMAND OR NOT
                 gettimeofday(&second, &tzp);
-                if(first.tv_usec>second.tv_usec)
-                {
-                    second.tv_usec += 1000000;
-                    second.tv_sec--;
-                }
-                lapsed.tv_usec = second.tv_usec - first.tv_usec;
-                lapsed.tv_sec = second.tv_sec - first.tv_sec;
-                printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
+                vpTimeSum += (double)((second.tv_usec - first.tv_usec)/1.0e6
+                    + second.tv_sec - first.tv_sec);
                 validation(median,partLength,size,numberPart,0,Current_Comm);
                 MPI_Barrier(Current_Comm);
                 free(pivotArray);
@@ -364,7 +358,7 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
 		    median=pivot;
 		    finalize=1; //dilwnw finalaize =1
 		    MPI_Bcast(&finalize,1,MPI_INT,0,Current_Comm); //to stelnw se olous, oi opoioi an laboun finalize =1 tote kaloun MPI finalize k telos
-		    gettimeofday(&second, &tzp);
+		    /*gettimeofday(&second, &tzp);
             if(first.tv_usec>second.tv_usec)
             {
                 second.tv_usec += 1000000;
@@ -372,7 +366,7 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
             }
             lapsed.tv_usec = second.tv_usec - first.tv_usec;
             lapsed.tv_sec = second.tv_sec - first.tv_sec;
-            printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);
+            printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);*/
 		    validation(median,partLength,size,numberPart,processId,Current_Comm);
             MPI_Barrier(Current_Comm);
             free(pivotArray);
@@ -599,8 +593,10 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
             }
         }
     }
+    #ifdef DEBUG
     printf("ID = %d, i = %d, myCounter = %d, partnersCounter = %d\n",child_Id,i,myCounter,partnersCounter);
-    
+    #endif
+
     MPI_Gather(&myCounter, 1, MPI_INT, allCounters, 1, MPI_INT, 0,Current_Comm);
     MPI_Barrier(Current_Comm);
     if(child_Id==0){
@@ -745,7 +741,6 @@ void validationPartitionST(float *medians,int size,float *numberPart,int multipl
     int countMax;
     int i,j;
     int partLength = size / multiplicity;
-    printf("partLength = %d\n",partLength);
     for(i = 0;i < multiplicity;i++){
         countMinEq = 0;
         countMax = 0;
