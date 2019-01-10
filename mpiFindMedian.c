@@ -100,12 +100,12 @@ void calculateDistances(float *distances,floatType **pointCoords,floatType *vant
 }
 
 void calculateDistancesST(float *distances,floatType **pointCoords,int *vantagePoints,
-                            int pointsLength,int vantagePointsLength,int cordSize){
+                            int pointsLength,int vantagePointsLength,int coordSize){
     int i,j,currentVantagePoint;
     for(i=0;i<pointsLength;i++){
         currentVantagePoint = vantagePoints[ i / (pointsLength / vantagePointsLength) ];
         distances[i] = 0;
-        for(j=0;j<cordSize;j++){
+        for(j=0;j<coordSize;j++){
             distances[i] = distances[i] + (float)pow((double)pointCoords[i][j] - pointCoords[currentVantagePoint][j],2.0);
         }
         distances[i] = sqrt((double)distances[i]);
@@ -583,6 +583,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
             #endif
             //pointBuffer = pointsCoords[i];
             MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dest, 1, dest, 1,Current_Comm, &Stat);
+
             //pointsCoords[i] = pointBuffer;
             //printf("%d Recieved from...%d, myCounter = [%d], partnersCounter = [%d],point = [%f,%f,%f]\n",child_Id,dest,myCounter,partnersCounter,pointsCoords[i][0],pointsCoords[i][1],pointsCoords[i][2]);
             myCounter--;

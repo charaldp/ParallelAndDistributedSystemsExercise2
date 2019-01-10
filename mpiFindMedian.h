@@ -1,9 +1,9 @@
-//#define DEBUG
+#define DEBUG
 //#define DEBUG_DIST
-//#define DEBUG_TRANSFER
-//#define DEBUG_TRANSFER_ST
-//#define DEBUG_MAIN
-//#define DBBUG_VPST
+#define DEBUG_TRANSFER
+#define DEBUG_TRANSFER_ST
+#define DEBUG_MAIN
+#define DBBUG_VPST
 
 #define floatType double
 #define MPI_floatType MPI_DOUBLE
@@ -57,6 +57,8 @@ void validationPartitionST(float *medians,int size,float *numberPart,int l);
 
 //Read floating point numbers from a csv file into a matrix <data>
 void read_csv(int row, int col, char *filename, floatType **data, int rowOffset, int colOffset);
+
+void printPoints(floatType **pointsCoords,int size,int coordSize,int processId);
 
 /****Partitions the Array into larger and smaller than the pivot values****/
 void partition (float *array,int elements, float pivot, float **arraysmall, float **arraybig, int *endsmall, int *endbig);
