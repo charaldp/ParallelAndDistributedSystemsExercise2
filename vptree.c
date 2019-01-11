@@ -24,7 +24,7 @@ double vpTimeSum = 0, knnTimeSum = 0;
 int main(int argc, char **argv)
 {
     int i,j,k,l,team,processId,noProcesses,*child_Id,*child_num,size,partLength,coordSize,vantagePoint,
-    *tempVantagePoints,*allVantagePoints,*commonTreeVPs,count,multiplicity,indexOffset;
+    *tempVantagePoints,*localTreeVPs,*commonTreeVPs,count,multiplicity,indexOffset;
     float median,*tempMedians,*allMedians,*distances,*commonTreeMedians;
     floatType **pointsCoords,*vantagePointCoords;
     MPI_Comm *childComm;
@@ -51,7 +51,9 @@ int main(int argc, char **argv)
     //Allocating memory for data of each process
     pointsCoords = (floatType **)malloc(partLength * sizeof(floatType*));
     for(i = 0; i < partLength; i++){
+        //The extra coordinate (+ 1) is used to keep the iterations on which this point was chosen as vantage point !!!
         pointsCoords[i] = (floatType *)calloc((coordSize + 1), sizeof(floatType));
+        //calloc() is used in order to set the initial iteration bits chosen as vantage point to zero(explained at lines 104 & 238,241)
     }
     distances = (float *)malloc(partLength * sizeof(float));
     vantagePointCoords = (floatType*)malloc(coordSize * sizeof(floatType));
@@ -71,6 +73,7 @@ int main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     int l_parallel_max = log(noProcesses)/log(2);
+    int l_max = log(size)/log(2);
     childComm = (MPI_Comm*)malloc( l_parallel_max * sizeof(MPI_Comm));
     child_num = (int*)malloc( l_parallel_max * sizeof(int));
     child_Id = (int*)malloc( l_parallel_max * sizeof(int));
@@ -99,6 +102,7 @@ int main(int argc, char **argv)
         {
             srand(time(NULL)*(team+1)*(l+1)*(processId+1));
             vantagePoint = rand() % partLength;
+            // Add a bit for each iteration l the chosen point was the vantage point in the extra coordinate
             pointsCoords[vantagePoint][coordSize] += 1<<l;
             #ifdef DEBUG
             printf("Iteration %d Team%dVantagePoint = %d\n",l,team,vantagePoint);
@@ -146,7 +150,6 @@ int main(int argc, char **argv)
             MPI_Bcast(&commonTreeMedians[indexOffset + j],1,MPI_FLOAT,0 ,MPI_COMM_WORLD);
         }
         MPI_Barrier(MPI_COMM_WORLD);
-        //transferPointsST(distances,median,pointsCoords,partLength,coordSize);
         calculateDistances(distances,pointsCoords,vantagePointCoords,partLength,coordSize);
 
         // Count points that need exchange
@@ -154,6 +157,7 @@ int main(int argc, char **argv)
         for(i = 0;i < partLength;i++)
             if((child_Id[l] >= child_num[l]/2 && distances[i] <= median) || (child_Id[l] < child_num[l]/2 && distances[i] > median))
                 count++;
+
         MPI_Barrier(MPI_COMM_WORLD);
         transferPoints(distances,median,pointsCoords,partLength,coordSize + 1,child_Id[l],child_num[l],childComm[l],count);
         gettimeofday(&second, &tzp);
@@ -175,8 +179,9 @@ int main(int argc, char **argv)
     // Single Thread Operations
     tempMedians = (float*)malloc(sizeof(float));
     tempVantagePoints = (int*)malloc(sizeof(int));
-    allMedians = (float*)malloc(sizeof(float));
-    allVantagePoints = (int*)malloc(sizeof(int));
+
+    localTreeMedians = (float*)malloc((1<<(l_max - l_parallel_max) - 1) * sizeof(float));
+    localTreeVPs = (int*)malloc((1<<(l_max - l_parallel_max) - 1) * sizeof(int));
     for(l = l_parallel_max, indexOffset = 0;
         l<log(size)/log(2);
         l++, indexOffset += multiplicity){
@@ -187,8 +192,6 @@ int main(int argc, char **argv)
         #endif
         tempMedians = (float*)realloc(tempMedians,multiplicity * sizeof(float));
         tempVantagePoints = (int*)realloc(tempVantagePoints,multiplicity * sizeof(int));
-        allMedians = (float*)realloc(allMedians,(indexOffset + multiplicity) * sizeof(float));
-        allVantagePoints = (int*)realloc(allVantagePoints,(indexOffset + multiplicity) * sizeof(int));
 
         for(i = 0;i < multiplicity;i++){
             srand(time(NULL)*(l+1)*(processId+1)*(i+1));
@@ -213,28 +216,27 @@ int main(int argc, char **argv)
         calculateDistancesST(distances,pointsCoords,tempVantagePoints,partLength,multiplicity,coordSize);
         validationPartitionST(tempMedians,partLength,distances,multiplicity);
         for(i = 0;i < multiplicity;i++){
-            allMedians[indexOffset + i] = tempMedians[i];
-            allVantagePoints[indexOffset + i] = tempVantagePoints[i];
+            localTreeMedians[indexOffset + i] = tempMedians[i];
+            localTreeVPs[indexOffset + i] = tempVantagePoints[i];
         }
-        //MPI_Finalize();
-        //exit(0);
+        
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     printf("Total Time elapsed for creation of vptree on process %d is %f sec\n",processId,vpTimeSum);
-    if(processId == 0)
-        printf("Serial VP tree array size: %d\n",indexOffset);
-    //printPoints(pointsCoords,partLength,coordSize+1,processId);
+
     int index,*allIndices;
     commonTreeVPs = (int*)malloc(((1<<l_parallel_max) - 1)*sizeof(int));
     if(processId == 0)
         allIndices = (int*)malloc(noProcesses * sizeof(int));
-    if(processId == 3)
+    if(processId == 0)
     printf("vpIndex = |");
     for(l = 0,indexOffset = 0;l < l_parallel_max;l++,indexOffset += i){
         k = -1;
+        //Create the mask i in order to obtain the vantage points of the current iteration
         i = 1<<l;
         for(j = 0;j < partLength;j++)
-            if(((int)(pointsCoords[j][coordSize]) & i) > 0)
+            if(((int)(pointsCoords[j][coordSize]) & i) > 0) // The appliance of this mask satisfies this condition only for vantage points of this iteration
                 k = processId*partLength + j;
 
         MPI_Gather(&k, 1, MPI_INT, allIndices, 1, MPI_INT, 0,MPI_COMM_WORLD);
@@ -247,20 +249,23 @@ int main(int argc, char **argv)
                 index++;
             }
             MPI_Bcast(&commonTreeVPs[indexOffset + j],1,MPI_INT,0,MPI_COMM_WORLD);
-            if(processId == 3)
+            if(processId == 0)
                 printf("%d|",commonTreeVPs[indexOffset + j]);
         }
-        if(processId == 3)
+        if(processId == 0)
             printf("\n");
     }
-    if(processId == 2){
+    
+    if(processId == 0){
         printf("medians = |");
-        for(l = 0,indexOffset = 0;l < l_parallel_max;indexOffset += 1 << l,l++ ){
+        for(l = 0,indexOffset = 0;l < l_parallel_max;indexOffset += 1 << l,l++){
             for(j = 0;j < 1<<l;j++)
                 printf("%f|",commonTreeMedians[indexOffset + j]);
             printf("\n");
         }
     }
+
+    free(distances);
     // All kNN-Search using Vantage Point Tree structure
     for(i = 1;i <= 8;i++){
         k = 1 << i;
@@ -268,6 +273,5 @@ int main(int argc, char **argv)
     }
 
     MPI_Finalize();
-    //free(distances);
     exit(0);
 }

@@ -358,15 +358,9 @@ float masterPart(int noProcesses,int processId,int size,int partLength,float *nu
 		    median=pivot;
 		    finalize=1; //dilwnw finalaize =1
 		    MPI_Bcast(&finalize,1,MPI_INT,0,Current_Comm); //to stelnw se olous, oi opoioi an laboun finalize =1 tote kaloun MPI finalize k telos
-		    /*gettimeofday(&second, &tzp);
-            if(first.tv_usec>second.tv_usec)
-            {
-                second.tv_usec += 1000000;
-                second.tv_sec--;
-            }
-            lapsed.tv_usec = second.tv_usec - first.tv_usec;
-            lapsed.tv_sec = second.tv_sec - first.tv_sec;
-            printf("Time elapsed: %lu, %lu s\n", lapsed.tv_sec, lapsed.tv_usec);*/
+		    gettimeofday(&second, &tzp);
+                vpTimeSum += (double)((second.tv_usec - first.tv_usec)/1.0e6
+                    + second.tv_sec - first.tv_sec);
 		    validation(median,partLength,size,numberPart,processId,Current_Comm);
             MPI_Barrier(Current_Comm);
             free(pivotArray);
@@ -579,7 +573,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
     for(i = 0;i < partLength;i++){
         if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
             #ifdef DEBUG_TRANSFER
-                printf("%d,%d Sending distances[%d] to...%d,%d\n",child_Id,myCounter,i,dest,partnersCounter);
+                printf("%d,%d Sending pointCoords[%d] to...%d,%d\n",child_Id,myCounter,i,dest,partnersCounter);
             #endif
             //pointBuffer = pointsCoords[i];
             MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dest, 1, dest, 1,Current_Comm, &Stat);
@@ -654,11 +648,11 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
         
         if(dests[0] != -1){
             for(offset = 0; //i's value has been left unchanged and the point transfer continues right from the point it has stopped
-                i < partLength && offset < destSize;
+                i < partLength && offset < destSize && dests[offset]!=-1;
                 i++){
                 if(((distances[i] > median) && (child_Id < dest)) || ((distances[i] <= median) && (child_Id > dest))){
                     #ifdef DEBUG_TRANSFER
-                        printf("%d,%d Sending distances[%d] to...%d\n",child_Id,myCounter,i,dests[offset]);
+                        printf("%d,%d Sending pointCoords[%d] to...%d\n",child_Id,myCounter,i,dests[offset]);
                     #endif
                     //pointBuffer = pointsCoords[i];
                     MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dests[offset], 1, dests[offset], 1,Current_Comm, &Stat);

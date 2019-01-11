@@ -1,9 +1,9 @@
-#define DEBUG
-#define DEBUG_DIST
-#define DEBUG_TRANSFER
-#define DEBUG_TRANSFER_ST
-#define DEBUG_MAIN
-#define DBBUG_VPST
+//#define DEBUG
+//#define DEBUG_DIST
+//#define DEBUG_TRANSFER
+//#define DEBUG_TRANSFER_ST
+//#define DEBUG_MAIN
+//#define DBBUG_VPST
 
 #define floatType float
 #define MPI_floatType MPI_FLOAT
