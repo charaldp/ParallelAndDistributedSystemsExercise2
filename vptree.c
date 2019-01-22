@@ -25,7 +25,7 @@ int main(int argc, char **argv)
 {
     int i,j,k,l,team,processId,noProcesses,*child_Id,*child_num,size,partLength,coordSize,vantagePoint,
     *tempVantagePoints,*localTreeVPs,*commonTreeVPs,count,multiplicity,indexOffset;
-    float median,*tempMedians,*allMedians,*distances,*commonTreeMedians;
+    float median,*tempMedians,*allMedians,*distances,*localTreeMedians,*commonTreeMedians;
     floatType **pointsCoords,*vantagePointCoords;
     MPI_Comm *childComm;
     char *dataset;
@@ -265,11 +265,11 @@ int main(int argc, char **argv)
         }
     }
 
+    
     free(distances);
     // All kNN-Search using Vantage Point Tree structure
-    for(i = 1;i <= 8;i++){
-        k = 1 << i;
-
+    for(k = 1;k <= 256;k = k << 1){
+        //printf("%d\n",k);
     }
 
     MPI_Finalize();
