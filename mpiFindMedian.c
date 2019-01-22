@@ -90,13 +90,23 @@ void generatePoints(floatType **pointsCoords,int pointsLength,int coordSize,int 
 /****Calculate distance****/
 void calculateDistances(float *distances,floatType **pointCoords,floatType *vantagePointCoords,int pointsLength,int cordSize){
     int i,j;
-    for(i=0;i<pointsLength;i++){
+    for(i = 0;i < pointsLength;i++){
         distances[i] = 0;
-        for(j=0;j<cordSize;j++){
+        for(j = 0;j < cordSize;j++){
             distances[i] = distances[i] + (float)pow((double)pointCoords[i][j] - vantagePointCoords[j],2.0);
         }
         distances[i] = sqrt((double)distances[i]);
     }
+}
+
+float distance(floatType *point1Coords,floatType *point2Coords,int cordSize){
+    int i;
+    float distance;
+    distance = 0;
+    for(i = 0;i < cordSize;i++){
+        distance = distance + (float)pow((double)point1Coords[i] - point2Coords[i],2.0);
+    }
+    distance = sqrt((double)distance);
 }
 
 void calculateDistancesST(float *distances,floatType **pointCoords,int *vantagePoints,
@@ -941,4 +951,13 @@ float* multiSelection(float *array,int size,int multiplicity)
         medians[i] = selection(tempArray,partLength);
     }
     return medians;
+}
+
+void knnValidation(floatType **pointsCoords,float *distances,int pointsLength,floatType *pointCoords,int k,int *globalIndicesFound,MPI_Comm Current_Comm){
+    int i;
+    float *minDist;
+    minDist = (float*)malloc( k * sizeof(float));
+
+    MPI_Reduce(&minDist[i],distances,pointsLength,MPI_INT,MPI_SUM,0,Current_Comm);
+
 }

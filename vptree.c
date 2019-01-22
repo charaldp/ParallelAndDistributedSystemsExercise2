@@ -222,9 +222,7 @@ int main(int argc, char **argv)
         
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    printf("Total Time elapsed for creation of vptree on process %d is %f sec\n",processId,vpTimeSum);
-
+    gettimeofday(&first, &tzp);
     int index,*allIndices;
     commonTreeVPs = (int*)malloc(((1<<l_parallel_max) - 1)*sizeof(int));
     if(processId == 0)
@@ -255,7 +253,12 @@ int main(int argc, char **argv)
         if(processId == 0)
             printf("\n");
     }
-    
+    gettimeofday(&second, &tzp);
+    vpTimeSum += (double)((second.tv_usec - first.tv_usec)/1.0e6
+                + second.tv_sec - first.tv_sec);
+    MPI_Barrier(MPI_COMM_WORLD);
+    printf("Total Time elapsed for creation of vptree on process %d is %f sec\n",processId,vpTimeSum);
+
     if(processId == 0){
         printf("medians = |");
         for(l = 0,indexOffset = 0;l < l_parallel_max;indexOffset += 1 << l,l++){
@@ -265,11 +268,60 @@ int main(int argc, char **argv)
         }
     }
 
-    
-    free(distances);
+    int co_op,co_opFlag,*procCommIt,co_opFlags,process,neighboursFound,interestPoint,partSize,totalNeighboursFound;
+    floatType *interestPointCoords,**neighboursCoords;
+    neighboursCoords = (floatType**)malloc(sizeof(floatType*));
+    interestPointCoords = (floatType*)malloc(coordSize * sizeof(floatType));
+    co_opFlags = (int*)malloc(noProcesses * sizeof(int));
     // All kNN-Search using Vantage Point Tree structure
-    for(k = 1;k <= 256;k = k << 1){
+    for(k = 2;k <= 256;k = k << 1){
         //printf("%d\n",k);
+        for(process = 0;process < noProcesses;process++){
+            if(process == processId){
+                for(interestPoint = 0;interestPoint < partLength;interestPoint++){
+                    totalNeighboursFound = 0;
+                    interestPointCoords = pointsCoords[interestPoint];
+                    for(l = l_max-1,indexOffset = 1 << (l_max - l_parallel_max) - 1;l >= l_parallel_max;l--){
+                        multiplicity = 1<<(l - l_parallel_max);
+                        partSize = partLength/multiplicity;
+                        for(i = (interestPoint/partSize) * partSize;
+                            i < ((interestPoint/partSize) + 1) * partSize;
+                            i++){
+                            if(i != interestPoint){
+                                calculateDistances(distances,pointsCoords,interestPointCoords,partSize,coordSize);
+                                if(distance(pointsCoords[i],interestPointCoords,coordSize) <=
+                                 localTreeMedians[indexOffset + i/partSize] - distance(pointsCoords[i],pointsCoords[localTreeVPs[indexOffset + i/partSize]%partLength],coordSize))
+                                    totalNeighboursFound++;
+                            }
+                        }
+                        for(procCommIt = 0;procCommIt < noProcesses;procCommIt++)
+                            if(procCommIt != processId)
+                                MPI_Send(&co_opFlags[procCommIt],1,MPI_INT,procCommIt,1,MPI_COMM_WORLD);
+
+                        MPI_Send(interestPointCoords,coordSize,MPI_floatType,co_op,1,MPI_COMM_WORLD);
+                        MPI_Recv(&neighboursFound,1,MPI_INT,co_op,1,MPI_COMM_WORLD,&Stat);
+                        if(neighboursFound > 0){
+                            neighboursCoords = (floatType**)realloc(neighboursCoords,neighboursFound * coordSize * sizeof(floatType*));
+
+                            MPI_Recv(neighboursCoords,neighboursFound,MPI_floatType,process,1,MPI_COMM_WORLD,&Stat);
+                        }
+
+                    }
+
+                }
+                
+            }else{
+                MPI_Recv(&co_opFlag,1,MPI_INT,process,1,MPI_COMM_WORLD,&Stat);
+                if(co_opFlag){
+                    MPI_Recv(interestPointCoords,coordSize,MPI_floatType,process,1,MPI_COMM_WORLD,&Stat);
+                    //TODO Search on my subtree
+                    neighboursCoords = (floatType**)realloc(neighboursCoords,neighboursFound * coordSize * sizeof(floatType*));
+                    MPI_Send(&neighboursFound,1,MPI_INT,process,1,MPI_COMM_WORLD);
+                    if(neighboursFound > 0)
+                        MPI_Send(neighboursCoords,neighboursFound,MPI_floatType,process,1,MPI_COMM_WORLD);
+                }
+            }
+        }
     }
 
     MPI_Finalize();

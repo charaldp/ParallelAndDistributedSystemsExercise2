@@ -24,10 +24,13 @@ void swap_values(float *array,int x,int y);
 /*** Generate a random point set for each process ***/
 void generatePoints(floatType **pointsCoords,int pointsLength,int coordSize,int cal);
 
-/***Calculate distance***/
+/***Calculate distances of set of points from another point***/
 void calculateDistances(float *distances,floatType **pointCoords,floatType *vantagePointCoords,int pointsLength,int cordSize);
 
+/***Calculate Singular Distance between 2 points***/
+float distance(floatType *point1Coords,floatType *point2Coords,int cordSize);
 
+/***Calculate distances of subsets of points from a single point of each subset***/
 void calculateDistancesST(float *distances,floatType **pointCoords,int *vantagePoints,
                             int pointsLength,int vantagePointsLength,int cordSize);
 /***Validates the stability of the operation****/
@@ -68,6 +71,7 @@ float selection(float *array,int number);
 
 float* multiSelection(float *array,int size,int l);
 
+void knnValidation(floatType **pointsCoords,float *distances,int pointsLength,floatType *pointCoords,int k,int *globalIndicesFound,MPI_Comm Current_Comm);
 #endif
 
 
