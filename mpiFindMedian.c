@@ -107,6 +107,7 @@ float distance(floatType *point1Coords,floatType *point2Coords,int cordSize){
         distance = distance + (float)pow((double)point1Coords[i] - point2Coords[i],2.0);
     }
     distance = sqrt((double)distance);
+    return distance;
 }
 
 void calculateDistancesST(float *distances,floatType **pointCoords,int *vantagePoints,
@@ -156,7 +157,7 @@ void validation(float median,int partLength,int size,float *numberPart,int proce
             printf("Values equal to median: %d\n",sumEq);
            	printf("Values lower than median: %d\n",sumMin);
         #endif
-        assert((sumMax <= size/2) && (sumMin <= size/2));
+        assert((sumMax <= size/2) && (sumMin < size/2));
 
     }
 }
@@ -546,13 +547,17 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
     int child_Id,int child_num,MPI_Comm Current_Comm,int count){
     int i,j,k,offset,*allDests,*dests,destSize,partnersCounter,*allCounters;
     if(child_Id==0)
-        allCounters = (int*)malloc(child_num*sizeof(int));
+        allCounters = (int*)malloc(child_num * sizeof(int));
+
+    float **distTemp = (float **)calloc(partLength, sizeof(float*));
+
     MPI_Status Stat;
     int myCounter = count;
     int dest = (child_Id < child_num / 2) ? (child_Id + child_num / 2) : (child_Id - child_num / 2);
     #ifdef DEBUG_TRANSFER
     printf("%d Sending counter to...%d, myCounter = [%d]\n",child_Id,dest,myCounter);
     #endif
+    MPI_Barrier(Current_Comm);
     MPI_Gather(&myCounter, 1, MPI_INT, allCounters, 1, MPI_INT, 0,Current_Comm);
     //Process the counters array for proper scattering
     if(child_Id == 0){
@@ -587,7 +592,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
             #endif
             //pointBuffer = pointsCoords[i];
             MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dest, 1, dest, 1,Current_Comm, &Stat);
-
+            //MPI_Sendrecv_replace(*distances[i], 1, MPI_FLOAT, dest, 1, dest, 1,Current_Comm, &Stat);
             //pointsCoords[i] = pointBuffer;
             //printf("%d Recieved from...%d, myCounter = [%d], partnersCounter = [%d],point = [%f,%f,%f]\n",child_Id,dest,myCounter,partnersCounter,pointsCoords[i][0],pointsCoords[i][1],pointsCoords[i][2]);
             myCounter--;
@@ -666,6 +671,7 @@ void transferPoints(float *distances,float median,floatType **pointsCoords,int p
                     #endif
                     //pointBuffer = pointsCoords[i];
                     MPI_Sendrecv_replace(pointsCoords[i], coordSize, MPI_floatType, dests[offset], 1, dests[offset], 1,Current_Comm, &Stat);
+                    //MPI_Sendrecv_replace(*distances[i], 1, MPI_FLOAT, dests[offset], 1, dests[offset], 1,Current_Comm, &Stat);
                     //pointsCoords[i] = pointBuffer;
                     offset++;
                     //myCounter--;
@@ -953,11 +959,52 @@ float* multiSelection(float *array,int size,int multiplicity)
     return medians;
 }
 
-void knnValidation(floatType **pointsCoords,float *distances,int pointsLength,floatType *pointCoords,int k,int *globalIndicesFound,MPI_Comm Current_Comm){
-    int i;
-    float *minDist;
-    minDist = (float*)malloc( k * sizeof(float));
+void knnValidation(floatType **pointsCoords,float *distances,int pointsLength,floatType *pointCoords,int k,int *globalIndicesFound,int processId,int noProcesses,MPI_Comm Current_Comm){
+    int i,m,scanDirection,*localNeighbours;
+    float **minDist,max,maxDist,minTemp; //Max distance is required for stability reasons
+    max = 0;
+    for(i = 0;i < pointsLength;i++)
+        if(distances[i] > max)
+            max = distances[i];
 
-    MPI_Reduce(&minDist[i],distances,pointsLength,MPI_INT,MPI_SUM,0,Current_Comm);
+    MPI_Reduce(&maxDist,&max,1,MPI_FLOAT,MPI_MAX,0,Current_Comm);
+    MPI_Bcast(&maxDist,1,MPI_FLOAT,0,Current_Comm);
 
+    localNeighbours = (int*)malloc( k * sizeof(int));
+    *minDist = (float*)malloc( k * sizeof(float));
+
+    *minDist[0] = maxDist + 1.0;
+    for(i = 0,m = 0;i < pointsLength;i++){
+        if(distances[i] < *minDist[m] && distances[i] != 0){
+            *minDist[m] = distances[i];
+            localNeighbours[m] = processId * pointsLength + i;
+            if(m == 0){
+                scanDirection = 1;
+            }else if(m == k-1){
+                scanDirection = -1;
+            }
+            m += scanDirection;
+        }
+    }
+    int inverseScanElement = m - scanDirection;
+    for(i = 0,m = inverseScanElement;i < k;i++){
+        MPI_Reduce(&minTemp,&minDist[m],1,MPI_FLOAT,MPI_MIN,0,Current_Comm);
+
+        MPI_Bcast(&minTemp,1,MPI_FLOAT,0,Current_Comm);// If the min was found by a slave he has to know so that he trashes this point for the next iteration
+        
+        if(processId == 0)
+            // Check for point in globalIndicesFound
+
+        if(*minDist[m] == minTemp){
+            *minDist[m] = maxDist; // Make sure this point's distance doesn't have the smallest value in the next iteration
+            if(m == 0 || m == k){
+                scanDirection *= -1;
+                m = inverseScanElement - scanDirection;
+            }else{
+                m -= scanDirection;
+            }
+        }
+
+    }
+    
 }

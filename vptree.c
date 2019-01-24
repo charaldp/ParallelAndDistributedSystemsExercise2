@@ -25,7 +25,7 @@ int main(int argc, char **argv)
 {
     int i,j,k,l,team,processId,noProcesses,*child_Id,*child_num,size,partLength,coordSize,vantagePoint,
     *tempVantagePoints,*localTreeVPs,*commonTreeVPs,count,multiplicity,indexOffset;
-    float median,*tempMedians,*allMedians,*distances,*localTreeMedians,*commonTreeMedians;
+    float median,*tempMedians,*distances,*localTreeMedians,*commonTreeMedians;
     floatType **pointsCoords,*vantagePointCoords;
     MPI_Comm *childComm;
     char *dataset;
@@ -129,7 +129,7 @@ int main(int argc, char **argv)
         #endif
         if(child_Id[l]==0)
         {
-            median = masterPart(child_num[l],child_Id[l],size/(1<<l),partLength,distances,childComm[l]);
+            median = masterPart(child_num[l],child_Id[l],size/(1<<l),partLength,distances,childComm[l]) + 1/1.0e4;
             #ifdef DEBUG
             printf("l = %d,Median from team %d is: %f\n",l,team,median);
             #endif
@@ -154,10 +154,21 @@ int main(int argc, char **argv)
 
         // Count points that need exchange
         count = 0;
-        for(i = 0;i < partLength;i++)
-            if((child_Id[l] >= child_num[l]/2 && distances[i] <= median) || (child_Id[l] < child_num[l]/2 && distances[i] > median))
-                count++;
+        
+        if(child_Id[l] >= child_num[l]/2){
+            for(i = 0;i < partLength;i++)
+                if(distances[i] <= median)
+                    count++;
+        }else{
+            for(i = 0;i < partLength;i++)
+                if(distances[i] > median)
+                    count++;
+        }
 
+
+        #ifdef DEBUG_MAIN
+            printf("l = %d,count[%d] = %d\n",l,child_Id[l],count);
+        #endif
         MPI_Barrier(MPI_COMM_WORLD);
         transferPoints(distances,median,pointsCoords,partLength,coordSize + 1,child_Id[l],child_num[l],childComm[l],count);
         gettimeofday(&second, &tzp);
@@ -180,8 +191,8 @@ int main(int argc, char **argv)
     tempMedians = (float*)malloc(sizeof(float));
     tempVantagePoints = (int*)malloc(sizeof(int));
 
-    localTreeMedians = (float*)malloc((1<<(l_max - l_parallel_max) - 1) * sizeof(float));
-    localTreeVPs = (int*)malloc((1<<(l_max - l_parallel_max) - 1) * sizeof(int));
+    localTreeMedians = (float*)malloc(((1<<(l_max - l_parallel_max)) - 1) * sizeof(float));
+    localTreeVPs = (int*)malloc(((1<<(l_max - l_parallel_max)) - 1) * sizeof(int));
     for(l = l_parallel_max, indexOffset = 0;
         l<log(size)/log(2);
         l++, indexOffset += multiplicity){
@@ -268,20 +279,23 @@ int main(int argc, char **argv)
         }
     }
 
-    int co_op,co_opFlag,*procCommIt,co_opFlags,process,neighboursFound,interestPoint,partSize,totalNeighboursFound;
+    int co_op,co_opFlag,procCommIt,*co_opFlags,process,neighboursFound,**allPointsKneighbours,interestPoint,partSize,totalNeighboursFound;
     floatType *interestPointCoords,**neighboursCoords;
     neighboursCoords = (floatType**)malloc(sizeof(floatType*));
     interestPointCoords = (floatType*)malloc(coordSize * sizeof(floatType));
     co_opFlags = (int*)malloc(noProcesses * sizeof(int));
     // All kNN-Search using Vantage Point Tree structure
     for(k = 2;k <= 256;k = k << 1){
-        //printf("%d\n",k);
+        allPointsKneighbours = (int**)malloc(size * sizeof((int*)malloc(k * sizeof(int))));
+        for(i = 0;i < size;i++)
+            allPointsKneighbours[i] = (int*)malloc(k * sizeof(int));
+
         for(process = 0;process < noProcesses;process++){
             if(process == processId){
                 for(interestPoint = 0;interestPoint < partLength;interestPoint++){
                     totalNeighboursFound = 0;
                     interestPointCoords = pointsCoords[interestPoint];
-                    for(l = l_max-1,indexOffset = 1 << (l_max - l_parallel_max) - 1;l >= l_parallel_max;l--){
+                    for(l = l_max-1,indexOffset = (1 << (l_max - l_parallel_max)) - 1;l >= l_parallel_max;l--){
                         multiplicity = 1<<(l - l_parallel_max);
                         partSize = partLength/multiplicity;
                         for(i = (interestPoint/partSize) * partSize;
@@ -289,9 +303,11 @@ int main(int argc, char **argv)
                             i++){
                             if(i != interestPoint){
                                 calculateDistances(distances,pointsCoords,interestPointCoords,partSize,coordSize);
-                                if(distance(pointsCoords[i],interestPointCoords,coordSize) <=
-                                 localTreeMedians[indexOffset + i/partSize] - distance(pointsCoords[i],pointsCoords[localTreeVPs[indexOffset + i/partSize]%partLength],coordSize))
-                                    totalNeighboursFound++;
+                                if(distance(pointsCoords[i],interestPointCoords,coordSize) <=   //If the interest point's distance from the current neighbour is less than the distance from vptree's current hypersphere's bound
+                                 abs(localTreeMedians[indexOffset + i/partSize] - distance(pointsCoords[i],pointsCoords[localTreeVPs[indexOffset + i/partSize]%partLength],coordSize)) ){
+                                    allPointsKneighbours[totalNeighboursFound] = partLength * processId + i;
+                                    totalNeighboursFound++; // A certain neighbour has been found
+                                }
                             }
                         }
                         for(procCommIt = 0;procCommIt < noProcesses;procCommIt++)

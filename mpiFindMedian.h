@@ -1,12 +1,12 @@
-//#define DEBUG
+#define DEBUG
 //#define DEBUG_DIST
-//#define DEBUG_TRANSFER
+#define DEBUG_TRANSFER
 //#define DEBUG_TRANSFER_ST
-//#define DEBUG_MAIN
+#define DEBUG_MAIN
 //#define DBBUG_VPST
 
-#define floatType float
-#define MPI_floatType MPI_FLOAT
+#define floatType double
+#define MPI_floatType MPI_DOUBLE
 
 MPI_Status Stat;
 extern double vpTimeSum;
@@ -71,7 +71,7 @@ float selection(float *array,int number);
 
 float* multiSelection(float *array,int size,int l);
 
-void knnValidation(floatType **pointsCoords,float *distances,int pointsLength,floatType *pointCoords,int k,int *globalIndicesFound,MPI_Comm Current_Comm);
+void knnValidation(floatType **pointsCoords,float *distances,int pointsLength,floatType *pointCoords,int k,int *globalIndicesFound,int processId,int noProcesses,MPI_Comm Current_Comm);
 #endif
 
 
